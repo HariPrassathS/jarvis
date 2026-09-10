@@ -49,3 +49,17 @@ export function getGoogleProvider(): GoogleAuthProvider {
   }
   return _provider;
 }
+
+let _calendarProvider: GoogleAuthProvider | null = null;
+
+export function getGoogleCalendarProvider(): GoogleAuthProvider {
+  if (!_calendarProvider) {
+    _calendarProvider = new GoogleAuthProvider();
+    _calendarProvider.addScope('https://www.googleapis.com/auth/calendar.readonly');
+    _calendarProvider.setCustomParameters({
+      prompt: 'consent',
+    });
+  }
+  return _calendarProvider;
+}
+

@@ -102,7 +102,8 @@ export type NarrativePhase =
 type LandingEntranceStep = 'black' | 'seed' | 'bloom' | 'core' | 'title' | 'ready';
 
 export default function Home() {
-  const { user, profile, loading: authLoading, signOut, devSignIn } = useAuth();
+  const { user, profile, googleAccessToken, loading: authLoading, signOut, devSignIn } = useAuth();
+
 
   // ── Dual Persona State (JARVIS / FRIDAY) with SSR-safe hydration ──
   const [persona, setPersona] = useState<VoicePersona>('jarvis');
@@ -294,6 +295,7 @@ export default function Home() {
   const {
     messages,
     isLoading,
+    isStreaming,
     isHistoryLoading,
     error,
     providerUsed,
@@ -305,6 +307,8 @@ export default function Home() {
   const {
     speak,
     stop: stopSpeaking,
+    queueSentence,
+    clearQueue: clearTtsQueue,
     isSpeaking,
     isSupported: ttsSupported,
   } = useSpeechSynthesis(persona);
@@ -446,13 +450,44 @@ export default function Home() {
     }
     greetedRef.current = true;
 
-    const greeting =
+    const fallbackGreeting =
       persona === 'friday'
         ? `Hey there, ${firstName}. All tactical systems are online and listening. What are we working on today?`
         : `Good day, ${firstName}. All systems are online and listening. How may I assist you today?`;
 
-    lastAssistantResponseRef.current = { text: greeting, timestamp: Date.now() };
-    setInitialGreeting(greeting);
+    // Asynchronously fetch contextual dynamic greeting (Time of Day + Recent Topic + Calendar)
+    const loadDynamicGreeting = async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const headers: Record<string, string> = {
+          Authorization: `Bearer ${idToken}`,
+        };
+        if (googleAccessToken) {
+          headers['x-google-access-token'] = googleAccessToken;
+        }
+
+        const res = await fetch(`/api/greeting?persona=${encodeURIComponent(persona)}`, {
+          headers,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.greeting && typeof data.greeting === 'string') {
+            lastAssistantResponseRef.current = { text: data.greeting, timestamp: Date.now() };
+            setInitialGreeting(data.greeting);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('[Home] Dynamic greeting fetch fallback:', err);
+      }
+
+      // Fallback greeting if network delay or error
+      lastAssistantResponseRef.current = { text: fallbackGreeting, timestamp: Date.now() };
+      setInitialGreeting(fallbackGreeting);
+    };
+
+    loadDynamicGreeting();
   }, [
     user,
     narrativePhase,
@@ -461,7 +496,9 @@ export default function Home() {
     messages.length,
     setInitialGreeting,
     persona,
+    googleAccessToken,
   ]);
+
 
   // Determine JARVIS state dynamically without effect loops
   const jarvisState: JarvisState = isSpeaking
@@ -472,21 +509,86 @@ export default function Home() {
     ? 'listening'
     : 'idle';
 
-  // Speak assistant response exactly once per new message
+  // ── Streaming Sentence-Boundary TTS ──
+  // Track which sentences have already been queued during streaming
+  const lastQueuedSentenceIdxRef = useRef(0);
+  const streamingMsgIndexRef = useRef(-1);
+
+  // Sentence boundary detector: splits on .!? followed by space or end-of-string
+  const SENTENCE_BOUNDARY_REGEX = /[.!?](?:\s|$)/g;
+
   useEffect(() => {
     if (messages.length === 0) return;
     const lastIdx = messages.length - 1;
     const lastMsg = messages[lastIdx];
-    if (
-      lastMsg.role === 'assistant' &&
-      ttsSupported &&
-      lastSpokenIndexRef.current !== lastIdx
-    ) {
+
+    if (lastMsg.role !== 'assistant' || !ttsSupported) return;
+
+    // During streaming: progressively queue completed sentences
+    if (isStreaming && lastMsg.content) {
+      // Reset sentence tracker if this is a new streaming message
+      if (streamingMsgIndexRef.current !== lastIdx) {
+        streamingMsgIndexRef.current = lastIdx;
+        lastQueuedSentenceIdxRef.current = 0;
+        lastSpokenIndexRef.current = lastIdx; // Mark as being handled
+      }
+
+      // Find all sentence boundaries in current content
+      const content = lastMsg.content;
+      const boundaries: number[] = [];
+      let match;
+      const regex = new RegExp(SENTENCE_BOUNDARY_REGEX.source, 'g');
+      while ((match = regex.exec(content)) !== null) {
+        boundaries.push(match.index + match[0].length);
+      }
+
+      // Queue any newly completed sentences
+      for (let i = lastQueuedSentenceIdxRef.current; i < boundaries.length; i++) {
+        const start = i === 0 ? 0 : boundaries[i - 1];
+        const end = boundaries[i];
+        const sentence = content.slice(start, end).trim();
+        if (sentence.length > 0) {
+          queueSentence(sentence, persona);
+        }
+      }
+      lastQueuedSentenceIdxRef.current = boundaries.length;
+
+      // Update echo reference progressively
+      lastAssistantResponseRef.current = { text: content, timestamp: Date.now() };
+      return;
+    }
+
+    // Stream just finished — queue any remaining un-spoken tail
+    if (!isStreaming && streamingMsgIndexRef.current === lastIdx && lastMsg.content) {
+      const content = lastMsg.content;
+      const boundaries: number[] = [];
+      let match;
+      const regex = new RegExp(SENTENCE_BOUNDARY_REGEX.source, 'g');
+      while ((match = regex.exec(content)) !== null) {
+        boundaries.push(match.index + match[0].length);
+      }
+
+      // Queue the tail (text after the last sentence boundary)
+      const lastBoundary = boundaries.length > 0 ? boundaries[boundaries.length - 1] : 0;
+      if (lastBoundary < content.length) {
+        const tail = content.slice(lastBoundary).trim();
+        if (tail.length > 0) {
+          queueSentence(tail, persona);
+        }
+      }
+
+      streamingMsgIndexRef.current = -1;
+      lastAssistantResponseRef.current = { text: content, timestamp: Date.now() };
+      return;
+    }
+
+    // Non-streaming: speak full message (greetings, history replay, fallback)
+    if (!isStreaming && lastSpokenIndexRef.current !== lastIdx) {
       lastSpokenIndexRef.current = lastIdx;
       lastAssistantResponseRef.current = { text: lastMsg.content, timestamp: Date.now() };
       speak(lastMsg.content, persona);
     }
-  }, [messages, ttsSupported, speak, persona]);
+  }, [messages, ttsSupported, speak, queueSentence, persona, isStreaming]);
 
   const handleSendFromChat = useCallback(
     (content: string) => {
@@ -906,6 +1008,7 @@ export default function Home() {
             <ChatPanel
               messages={messages}
               isLoading={isLoading}
+              isStreaming={isStreaming}
               error={error}
               onSend={handleSendFromChat}
               isExpanded={chatExpanded}

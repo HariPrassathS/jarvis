@@ -11,6 +11,7 @@ import type { ChatMessage, VoicePersona } from '@/types';
 interface ChatPanelProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  isStreaming?: boolean;
   error: string | null;
   onSend: (message: string) => void;
   isExpanded: boolean;
@@ -21,6 +22,7 @@ interface ChatPanelProps {
 export default function ChatPanel({
   messages,
   isLoading,
+  isStreaming = false,
   error,
   onSend,
   isExpanded,
@@ -97,70 +99,78 @@ export default function ChatPanel({
                   <p>Neural transcript buffer empty. Speak aloud or enter a command.</p>
                 </div>
               ) : (
-                messages.map((msg, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className={`flex gap-2.5 ${
-                      msg.role === 'user' ? 'justify-end' : 'justify-start'
-                    }`}
-                  >
-                    {msg.role !== 'user' && (
-                      <div
-                        className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
-                          isFriday
-                            ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
-                            : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
-                        }`}
-                      >
-                        <span
-                          className={`text-[10px] font-mono font-bold ${
-                            isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
-                          }`}
-                        >
-                          {isFriday ? 'F' : 'J'}
-                        </span>
-                      </div>
-                    )}
+                messages.map((msg, i) => {
+                  const isLastMsg = i === messages.length - 1;
+                  const showStreamingCursor = isStreaming && isLastMsg && msg.role === 'assistant';
 
-                    <div
-                      className={`max-w-[85%] sm:max-w-[78%] px-3.5 py-2 rounded-xl text-xs leading-relaxed font-mono ${
-                        msg.role === 'user'
-                          ? 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
-                          : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
+                  return (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.2 }}
+                      className={`flex gap-2.5 ${
+                        msg.role === 'user' ? 'justify-end' : 'justify-start'
                       }`}
                     >
+                      {msg.role !== 'user' && (
+                        <div
+                          className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
+                            isFriday
+                              ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
+                              : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
+                          }`}
+                        >
+                          <span
+                            className={`text-[10px] font-mono font-bold ${
+                              isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+                            }`}
+                          >
+                            {isFriday ? 'F' : 'J'}
+                          </span>
+                        </div>
+                      )}
+
                       <div
-                        className={`text-[9px] uppercase mb-1 tracking-wider font-semibold ${
+                        className={`max-w-[85%] sm:max-w-[78%] px-3.5 py-2 rounded-xl text-xs leading-relaxed font-mono ${
                           msg.role === 'user'
-                            ? 'text-[#4DE8E8]/50'
-                            : isFriday
-                            ? 'text-amber-300/70'
-                            : 'text-[#4DE8E8]/50'
+                            ? 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
+                            : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
                         }`}
                       >
-                        {msg.role === 'user'
-                          ? 'USER'
-                          : isFriday
-                          ? 'FRIDAY CORE'
-                          : 'JARVIS CORE'}
+                        <div
+                          className={`text-[9px] uppercase mb-1 tracking-wider font-semibold ${
+                            msg.role === 'user'
+                              ? 'text-[#4DE8E8]/50'
+                              : isFriday
+                              ? 'text-amber-300/70'
+                              : 'text-[#4DE8E8]/50'
+                          }`}
+                        >
+                          {msg.role === 'user'
+                            ? 'USER'
+                            : isFriday
+                            ? 'FRIDAY CORE'
+                            : 'JARVIS CORE'}
+                        </div>
+                        {msg.content}
+                        {showStreamingCursor && (
+                          <span className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom bg-[#4DE8E8] animate-pulse" />
+                        )}
                       </div>
-                      {msg.content}
-                    </div>
 
-                    {msg.role === 'user' && (
-                      <div className="flex-shrink-0 w-6 h-6 rounded-md bg-white/10 border border-white/20 flex items-center justify-center">
-                        <span className="text-[10px] font-mono text-white/70 font-bold">U</span>
-                      </div>
-                    )}
-                  </motion.div>
-                ))
+                      {msg.role === 'user' && (
+                        <div className="flex-shrink-0 w-6 h-6 rounded-md bg-white/10 border border-white/20 flex items-center justify-center">
+                          <span className="text-[10px] font-mono text-white/70 font-bold">U</span>
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })
               )}
 
-              {/* Thinking loader */}
-              {isLoading && (
+              {/* Thinking loader — only show when loading and NOT yet streaming */}
+              {isLoading && !isStreaming && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}

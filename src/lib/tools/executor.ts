@@ -10,14 +10,20 @@ import { calculate } from './calculate';
 import { runSystemDiagnostics } from './diagnostics';
 import { executeStarkProtocol, StarkProtocolName } from './protocols';
 import { computeFlightDynamics, FlightDynamicsParams } from './flight';
+import { getCalendarEvents } from './calendar';
 import { jarvisCache } from '@/lib/llm/cache';
+
+export interface ToolExecutionContext {
+  googleAccessToken?: string;
+}
 
 /**
  * Execute a tool call from the LLM and return the result.
  */
 export async function executeTool(
   toolCall: ToolCall,
-  profileId: string
+  profileId: string,
+  context?: ToolExecutionContext
 ): Promise<ToolResult> {
   const { name, arguments: argsStr } = toolCall.function;
 
@@ -108,6 +114,17 @@ export async function executeTool(
       break;
     }
 
+    case 'get_calendar_events': {
+      content = await getCalendarEvents(
+        {
+          time_frame: args.time_frame,
+          max_results: args.max_results ? Number(args.max_results) : undefined,
+        },
+        context?.googleAccessToken
+      );
+      break;
+    }
+
     default:
       content = `Unknown tool: ${name}`;
   }
@@ -124,9 +141,11 @@ export async function executeTool(
  */
 export async function executeToolCalls(
   toolCalls: ToolCall[],
-  profileId: string
+  profileId: string,
+  context?: ToolExecutionContext
 ): Promise<ToolResult[]> {
   return Promise.all(
-    toolCalls.map((tc) => executeTool(tc, profileId))
+    toolCalls.map((tc) => executeTool(tc, profileId, context))
   );
 }
+

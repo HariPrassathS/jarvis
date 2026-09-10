@@ -17,39 +17,52 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut as firebaseSignOut,
+  GoogleAuthProvider,
   type User,
 } from 'firebase/auth';
 import {
   getFirebaseAuth,
   getGoogleProvider,
+  getGoogleCalendarProvider,
 } from '@/lib/firebase';
 import type { UserProfile } from '@/types';
 
 interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
+  googleAccessToken: string | null;
   loading: boolean;
   error: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  requestCalendarAccess: () => Promise<string | null>;
   devSignIn?: (displayName?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   profile: null,
+  googleAccessToken: null,
   loading: true,
   error: null,
   signIn: async () => {},
   signOut: async () => {},
+  requestCalendarAccess: async () => null,
   devSignIn: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [googleAccessToken, setGoogleAccessToken] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('jarvis_google_token');
+    }
+    return null;
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
 
   // Sync Firebase user to Supabase on login
   const syncToSupabase = useCallback(async (firebaseUser: User) => {
@@ -146,12 +159,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const auth = getFirebaseAuth();
       const provider = getGoogleProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleAccessToken(credential.accessToken);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('jarvis_google_token', credential.accessToken);
+        }
+      }
     } catch (err: any) {
       console.error('Firebase Google sign-in failed:', err);
       if (err?.code !== 'auth/popup-closed-by-user') {
         setError(err?.message || 'Authentication failed. Please try again.');
       }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Request incremental Google Calendar permission
+  const requestCalendarAccess = useCallback(async (): Promise<string | null> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const auth = getFirebaseAuth();
+      const provider = getGoogleCalendarProvider();
+      const result = await signInWithPopup(auth, provider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setGoogleAccessToken(credential.accessToken);
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('jarvis_google_token', credential.accessToken);
+        }
+        return credential.accessToken;
+      }
+      return null;
+    } catch (err: any) {
+      console.error('Google Calendar authorization failed:', err);
+      if (err?.code !== 'auth/popup-closed-by-user') {
+        setError(err?.message || 'Calendar authorization failed.');
+      }
+      return null;
     } finally {
       setLoading(false);
     }
@@ -167,6 +215,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setProfile(null);
+    setGoogleAccessToken(null);
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('jarvis_google_token');
+    }
   }, []);
 
   // Developer / Automated Testing Biometric Sign-in Simulator
@@ -195,10 +247,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         profile,
+        googleAccessToken,
         loading,
         error,
         signIn,
         signOut,
+        requestCalendarAccess,
         devSignIn,
       }}
     >

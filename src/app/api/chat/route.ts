@@ -82,6 +82,8 @@ export async function POST(req: NextRequest) {
     let clientMessages: ChatMessage[] = [];
     let conversationId = '';
     let requestPersona: VoicePersona | undefined = undefined;
+    let googleAccessToken = req.headers.get('x-google-access-token') || undefined;
+
     try {
       const body = await req.json();
       if (Array.isArray(body.messages) && body.messages.length > 0) {
@@ -94,9 +96,13 @@ export async function POST(req: NextRequest) {
       if (personaVal === 'jarvis' || personaVal === 'friday') {
         requestPersona = personaVal;
       }
+      if (body.google_access_token) {
+        googleAccessToken = body.google_access_token;
+      }
     } catch {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
+
 
     // 4. Resolve conversation ID (generate client-safe standard UUID v4)
     if (!conversationId) {
@@ -249,7 +255,10 @@ export async function POST(req: NextRequest) {
 
     // 9. Single-Pass Tool Execution (No infinite search loops)
     if (response.tool_calls && response.tool_calls.length > 0) {
-      const toolResults = await executeToolCalls(response.tool_calls, profile.id);
+      const toolResults = await executeToolCalls(response.tool_calls, profile.id, {
+        googleAccessToken,
+      });
+
 
       llmMessages.push({
         role: 'assistant',

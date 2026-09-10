@@ -174,5 +174,30 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'get_calendar_events',
+      description:
+        "Retrieve upcoming events, meetings, and schedule items from the operator's Google Calendar. Supports querying today's schedule, tomorrow's schedule, or the upcoming week.",
+      parameters: {
+        type: 'object',
+        properties: {
+          time_frame: {
+            type: 'string',
+            enum: ['today', 'tomorrow', 'this_week', 'upcoming'],
+            description:
+              'The time window to retrieve events for: "today", "tomorrow", "this_week", or "upcoming" (next 7 days). Defaults to "today".',
+          },
+          max_results: {
+            type: 'number',
+            description: 'Maximum number of events to retrieve (default 10, max 25).',
+          },
+        },
+        required: [],
+      },
+    },
+  },
 ];
+
 

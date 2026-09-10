@@ -2,18 +2,19 @@
 
 // ──────────────────────────────────────────────
 // useChat Hook — Chat State Management + Session Continuity
-// Preserves conversation history across reloads and logins
+// Now with SSE Streaming for progressive token delivery
 // ──────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import type { ChatMessage, LLMProvider, VoicePersona } from '@/types';
+import type { ChatMessage, LLMProvider, VoicePersona, StreamChunk } from '@/types';
 
 const STORAGE_CONV_KEY = 'jarvis_active_conversation_id';
 
 interface UseChatReturn {
   messages: ChatMessage[];
   isLoading: boolean;
+  isStreaming: boolean;
   isHistoryLoading: boolean;
   error: string | null;
   providerUsed: LLMProvider | null;
@@ -24,13 +25,17 @@ interface UseChatReturn {
 }
 
 export function useChat(): UseChatReturn {
-  const { user } = useAuth();
+  const { user, googleAccessToken } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [providerUsed, setProviderUsed] = useState<LLMProvider | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+
+  const googleTokenRef = useRef(googleAccessToken);
+  googleTokenRef.current = googleAccessToken;
 
   const messagesRef = useRef<ChatMessage[]>([]);
   messagesRef.current = messages;
@@ -40,6 +45,10 @@ export function useChat(): UseChatReturn {
 
   const userRef = useRef(user);
   userRef.current = user;
+
+  // Abort controller for cancelling in-flight streams
+  const abortRef = useRef<AbortController | null>(null);
+
 
   // ── Rehydrate conversation history on login / page refresh ──
   useEffect(() => {
@@ -111,10 +120,17 @@ export function useChat(): UseChatReturn {
     };
   }, [user]);
 
-  // ── Send user message with full multi-turn conversational context ──
+  // ── Send user message with SSE streaming ──
   const sendMessage = useCallback(async (content: string, persona?: VoicePersona) => {
     const currentUser = userRef.current;
     if (!currentUser || !content.trim()) return;
+
+    // Cancel any in-flight stream
+    if (abortRef.current) {
+      abortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortRef.current = abortController;
 
     const userMessage: ChatMessage = { role: 'user', content: content.trim() };
     const currentMessages = messagesRef.current;
@@ -122,46 +138,170 @@ export function useChat(): UseChatReturn {
 
     setMessages(updatedMessages);
     setIsLoading(true);
+    setIsStreaming(false);
     setError(null);
 
     try {
       const idToken = await currentUser.getIdToken();
+      const currentGoogleToken = googleTokenRef.current;
 
-      const res = await fetch('/api/chat', {
+      const requestHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      };
+      if (currentGoogleToken) {
+        requestHeaders['x-google-access-token'] = currentGoogleToken;
+      }
+
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers: requestHeaders,
         body: JSON.stringify({
-          messages: updatedMessages.slice(-20), // Slice to last 20 messages for prompt efficiency
+          messages: updatedMessages.slice(-20),
           conversation_id: conversationIdRef.current,
           voice_persona: persona,
         }),
+        signal: abortController.signal,
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Chat request failed (${res.statusText})`);
+      // If streaming endpoint returns non-200 or non-SSE, fall back to blocking
+      if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
+        // Fall back to blocking /api/chat endpoint
+        const fallbackRes = await fetch('/api/chat', {
+          method: 'POST',
+          headers: requestHeaders,
+          body: JSON.stringify({
+            messages: updatedMessages.slice(-20),
+            conversation_id: conversationIdRef.current,
+            voice_persona: persona,
+          }),
+          signal: abortController.signal,
+        });
+
+
+        if (!fallbackRes.ok) {
+          const errData = await fallbackRes.json().catch(() => ({}));
+          throw new Error(errData.error || `Chat request failed (${fallbackRes.statusText})`);
+        }
+
+        const data = await fallbackRes.json();
+
+        const assistantMessage: ChatMessage = {
+          role: 'assistant',
+          content: data.message,
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+        setProviderUsed(data.provider_used);
+
+        if (data.conversation_id) {
+          setConversationId(data.conversation_id);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_CONV_KEY, data.conversation_id);
+          }
+        }
+        return;
       }
 
-      const data = await res.json();
-
-      const assistantMessage: ChatMessage = {
-        role: 'assistant',
-        content: data.message,
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-      setProviderUsed(data.provider_used);
-
-      if (data.conversation_id) {
-        setConversationId(data.conversation_id);
+      // Extract conversation metadata from response headers
+      const convId = res.headers.get('X-Conversation-Id');
+      if (convId) {
+        setConversationId(convId);
         if (typeof window !== 'undefined') {
-          localStorage.setItem(STORAGE_CONV_KEY, data.conversation_id);
+          localStorage.setItem(STORAGE_CONV_KEY, convId);
         }
       }
+
+      // Read SSE stream
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No readable stream available');
+
+      const decoder = new TextDecoder();
+      let streamedContent = '';
+      let assistantMsgIndex = -1;
+      let streamDone = false;
+
+      // Add placeholder assistant message
+      setMessages((prev) => {
+        assistantMsgIndex = prev.length;
+        return [...prev, { role: 'assistant', content: '' }];
+      });
+
+      setIsStreaming(true);
+
+      let buffer = '';
+
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE events from buffer
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          let chunk: StreamChunk;
+          try {
+            chunk = JSON.parse(jsonStr);
+          } catch {
+            continue;
+          }
+
+          // Token — append to streaming content
+          if (chunk.token) {
+            streamedContent += chunk.token;
+            // Update the assistant message in-place
+            setMessages((prev) => {
+              const updated = [...prev];
+              const idx = updated.length - 1;
+              if (idx >= 0 && updated[idx].role === 'assistant') {
+                updated[idx] = { ...updated[idx], content: streamedContent };
+              }
+              return updated;
+            });
+          }
+
+          // Provider info
+          if (chunk.provider_used) {
+            setProviderUsed(chunk.provider_used);
+          }
+
+          // Error
+          if (chunk.error) {
+            setError(chunk.error);
+          }
+
+          // Done
+          if (chunk.done) {
+            streamDone = true;
+            break;
+          }
+        }
+      }
+
+      // Finalize: ensure the last message has the full content
+      if (streamedContent) {
+        setMessages((prev) => {
+          const updated = [...prev];
+          const idx = updated.length - 1;
+          if (idx >= 0 && updated[idx].role === 'assistant') {
+            updated[idx] = { ...updated[idx], content: streamedContent };
+          }
+          return updated;
+        });
+      }
+
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // User cancelled — don't treat as error
+        return;
+      }
       console.error('[useChat] Chat error:', err);
       const errorMsg = err instanceof Error ? err.message : 'Error processing request';
       setError(errorMsg);
@@ -170,18 +310,33 @@ export function useChat(): UseChatReturn {
         role: 'assistant',
         content: `Apologies, sir. An anomaly occurred in the neural connection: ${errorMsg}`,
       };
-      setMessages((prev) => [...prev, errorAssistantMsg]);
+      setMessages((prev) => {
+        // Replace the empty streaming placeholder if it exists
+        const last = prev[prev.length - 1];
+        if (last?.role === 'assistant' && !last.content) {
+          return [...prev.slice(0, -1), errorAssistantMsg];
+        }
+        return [...prev, errorAssistantMsg];
+      });
     } finally {
       setIsLoading(false);
+      setIsStreaming(false);
+      abortRef.current = null;
     }
   }, []);
 
   // ── Reset session and clear storage for "+ NEW CHAT" ──
   const clearChat = useCallback(() => {
+    // Cancel any in-flight stream
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
     setMessages([]);
     setConversationId(null);
     setProviderUsed(null);
     setError(null);
+    setIsStreaming(false);
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_CONV_KEY);
     }
@@ -201,6 +356,7 @@ export function useChat(): UseChatReturn {
   return {
     messages,
     isLoading,
+    isStreaming,
     isHistoryLoading,
     error,
     providerUsed,

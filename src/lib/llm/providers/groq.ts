@@ -4,9 +4,10 @@
 // ──────────────────────────────────────────────
 
 import Groq from 'groq-sdk';
-import type { ChatMessage, LLMResponse, ToolDefinition } from '@/types';
+import type { ChatMessage, LLMResponse, ToolDefinition, StreamChunk } from '@/types';
 import type {
   ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
   ChatCompletionToolMessageParam,
   ChatCompletionUserMessageParam,
@@ -171,6 +172,115 @@ export async function callGroq(
     lastErr?.message?.includes('quota')
   ) {
     console.warn(`[Groq Provider] Key ...${key.slice(-4)} all models rate-limited. Cooling down.`);
+    keyCooldowns.set(key, Date.now() + 30000);
+  }
+  throw lastErr;
+}
+
+/**
+ * Stream Groq response token-by-token.
+ * Multi-model fallback on 429: tries each model's stream before giving up.
+ */
+export async function* streamGroq(
+  messages: ChatMessage[],
+  tools?: ToolDefinition[]
+): AsyncGenerator<StreamChunk, void, unknown> {
+  const groqMessages = toGroqMessages(messages);
+  const { client, key } = getNextHealthyClient();
+
+  let lastErr: any;
+
+  for (const model of GROQ_MODELS) {
+    const params: ChatCompletionCreateParamsStreaming = {
+      model,
+      messages: groqMessages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+    };
+
+    if (tools && tools.length > 0) {
+      params.tools = tools as ChatCompletionCreateParamsStreaming['tools'];
+      params.tool_choice = 'auto';
+    }
+
+    try {
+      const stream = await client.chat.completions.create(params);
+
+      // Accumulate tool calls across chunks (they arrive in parts)
+      const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
+      let hasToolCalls = false;
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        // Handle tool call deltas
+        if (delta.tool_calls) {
+          hasToolCalls = true;
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            if (!toolCallAccumulator[idx]) {
+              toolCallAccumulator[idx] = {
+                id: tc.id || `groq-tc-${idx}-${Date.now()}`,
+                name: tc.function?.name || '',
+                arguments: '',
+              };
+            }
+            if (tc.function?.name) {
+              toolCallAccumulator[idx].name = tc.function.name;
+            }
+            if (tc.function?.arguments) {
+              toolCallAccumulator[idx].arguments += tc.function.arguments;
+            }
+          }
+          continue;
+        }
+
+        // Handle text content deltas
+        if (delta.content) {
+          yield { token: delta.content };
+        }
+      }
+
+      // If tool calls were accumulated, yield them
+      if (hasToolCalls) {
+        const toolCalls = Object.values(toolCallAccumulator).map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: tc.arguments,
+          },
+        }));
+        yield { tool_calls: toolCalls, provider_used: 'groq' };
+        return;
+      }
+
+      yield { done: true, provider_used: 'groq' };
+      return;
+    } catch (err: any) {
+      lastErr = err;
+      const isRateLimit =
+        err?.status === 429 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('rate_limit') ||
+        err?.message?.includes('quota');
+      if (isRateLimit) {
+        console.warn(`[Groq Stream] Model ${model} rate-limited. Trying fallback model...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  // All models rate-limited — cool down key
+  if (
+    lastErr?.status === 429 ||
+    lastErr?.message?.includes('429') ||
+    lastErr?.message?.includes('quota')
+  ) {
+    console.warn(`[Groq Stream] Key ...${key.slice(-4)} all models rate-limited. Cooling down.`);
     keyCooldowns.set(key, Date.now() + 30000);
   }
   throw lastErr;

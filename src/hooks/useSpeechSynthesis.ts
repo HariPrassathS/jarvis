@@ -3,6 +3,7 @@
 // ──────────────────────────────────────────────
 // useSpeechSynthesis — Dual Persona Web Speech Synthesis
 // Supports JARVIS (male British butler) & FRIDAY (female tactical Irish/warm)
+// Now with sentence-queue TTS for streaming responses
 // ──────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -12,6 +13,8 @@ import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 interface UseSpeechSynthesisReturn {
   speak: (text: string, overridePersona?: VoicePersona) => void;
   stop: () => void;
+  queueSentence: (sentence: string, overridePersona?: VoicePersona) => void;
+  clearQueue: () => void;
   isSpeaking: boolean;
   isSupported: boolean;
   activeVoiceName: string | null;
@@ -121,6 +124,11 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   personaRef.current = persona;
   const settleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Sentence queue for streaming TTS
+  const sentenceQueueRef = useRef<string[]>([]);
+  const isQueuePlayingRef = useRef(false);
+  const queuePersonaRef = useRef<VoicePersona>(persona);
+
   const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   // ── Load available browser voices & listen to voiceschanged event ──
@@ -191,7 +199,6 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
     // 2. Heuristic gender and locale matching
     if (targetPersona === 'friday') {
-      // Find English voices with female descriptors
       const femaleEnglish = currentVoices.find(
         (v) => v.lang.startsWith('en') && FEMALE_VOICE_REGEX.test(v.name)
       );
@@ -200,14 +207,12 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         return femaleEnglish;
       }
 
-      // Irish English fallback
       const irishVoice = currentVoices.find((v) => v.lang.toLowerCase().includes('en-ie'));
       if (irishVoice) {
         diagnosticLogger.log('tts', `Voice matched FRIDAY Irish fallback: ${irishVoice.name}`);
         return irishVoice;
       }
 
-      // Any English voice not labeled male
       const nonMaleEnglish = currentVoices.find(
         (v) =>
           v.lang.startsWith('en') &&
@@ -218,7 +223,6 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         return nonMaleEnglish;
       }
     } else {
-      // JARVIS: Find English voices with British locale or male descriptors, strictly rejecting known female names
       const maleBritish = currentVoices.find(
         (v) =>
           (v.lang.toLowerCase().includes('en-gb') || v.lang.toLowerCase().includes('en_uk')) &&
@@ -256,7 +260,111 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
     return defaultVoice || null;
   }, []);
 
-  // ── Synthesize speech with persona-tuned acoustic delivery ──
+  /**
+   * Internal: speak a single text chunk with persona-tuned acoustic delivery.
+   * Returns a promise that resolves when the utterance finishes.
+   */
+  const speakChunk = useCallback(
+    (text: string, effectivePersona: VoicePersona): Promise<void> => {
+      return new Promise((resolve) => {
+        if (!isSupported || !text.trim()) {
+          resolve();
+          return;
+        }
+
+        const cleaned = cleanTextForSpeech(text);
+        if (!cleaned) {
+          resolve();
+          return;
+        }
+
+        try {
+          const utterance = new SpeechSynthesisUtterance(cleaned);
+          const voice = selectVoice(effectivePersona);
+
+          if (voice) {
+            utterance.voice = voice;
+            setActiveVoiceName(voice.name);
+          }
+
+          if (effectivePersona === 'friday') {
+            utterance.pitch = 1.12;
+            utterance.rate = 1.03;
+          } else {
+            utterance.pitch = 0.85;
+            utterance.rate = 0.96;
+          }
+
+          utterance.volume = 1.0;
+
+          utterance.onend = () => resolve();
+          utterance.onerror = () => resolve(); // Resolve anyway to not block the queue
+
+          window.speechSynthesis.speak(utterance);
+        } catch (e: any) {
+          console.warn('[TTS] Chunk playback error:', e);
+          resolve();
+        }
+      });
+    },
+    [isSupported, selectVoice]
+  );
+
+  /**
+   * Process the sentence queue sequentially.
+   */
+  const processQueue = useCallback(async () => {
+    if (isQueuePlayingRef.current) return;
+    isQueuePlayingRef.current = true;
+
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+
+    setIsSpeaking(true);
+
+    while (sentenceQueueRef.current.length > 0) {
+      const sentence = sentenceQueueRef.current.shift()!;
+      diagnosticLogger.log('tts', `Queue speaking sentence (${sentenceQueueRef.current.length} remaining)`, {
+        text: sentence.length > 40 ? `${sentence.slice(0, 40)}...` : sentence,
+      });
+      await speakChunk(sentence, queuePersonaRef.current);
+    }
+
+    isQueuePlayingRef.current = false;
+
+    // Acoustic settling buffer after queue completes
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(() => {
+      setIsSpeaking(false);
+      diagnosticLogger.log('tts', 'Sentence queue finished (post-settle)');
+    }, 200);
+  }, [speakChunk]);
+
+  /**
+   * Queue a sentence for sequential TTS playback.
+   * Used during streaming — sentences are spoken as they complete.
+   */
+  const queueSentence = useCallback(
+    (sentence: string, overridePersona?: VoicePersona) => {
+      if (!isSupported || !sentence.trim()) return;
+      queuePersonaRef.current = overridePersona || personaRef.current;
+      sentenceQueueRef.current.push(sentence);
+      processQueue();
+    },
+    [isSupported, processQueue]
+  );
+
+  /**
+   * Clear the sentence queue and stop any active speech.
+   */
+  const clearQueue = useCallback(() => {
+    sentenceQueueRef.current = [];
+    isQueuePlayingRef.current = false;
+  }, []);
+
+  // ── Synthesize speech with persona-tuned acoustic delivery (full message, non-streaming) ──
   const speak = useCallback(
     (text: string, overridePersona?: VoicePersona) => {
       if (!isSupported || !text.trim()) return;
@@ -267,6 +375,9 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
       const effectivePersona = overridePersona || personaRef.current;
 
       try {
+        // Clear any queued sentences
+        sentenceQueueRef.current = [];
+        isQueuePlayingRef.current = false;
         window.speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(cleaned);
@@ -279,11 +390,9 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
         // Persona acoustic profile tuning
         if (effectivePersona === 'friday') {
-          // FRIDAY: bright, clear, crisp feminine cadence, slightly faster
           utterance.pitch = 1.12;
           utterance.rate = 1.03;
         } else {
-          // JARVIS: deep, calm, butler-like baritone precision (0.85 pitch ensures male acoustic anchor even on default mobile voices)
           utterance.pitch = 0.85;
           utterance.rate = 0.96;
         }
@@ -302,7 +411,6 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
           settleTimerRef.current = null;
         }
 
-        // Belt-and-suspenders: Synchronously assert isSpeaking BEFORE speak() is queued
         setIsSpeaking(true);
 
         utterance.onstart = () => {
@@ -311,8 +419,6 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         };
 
         utterance.onend = () => {
-          // Acoustic settling buffer: keep isSpeaking = true for 200ms after audio playback concludes
-          // to prevent mobile microphone from catching physical room reverb or speaker decay
           if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
           settleTimerRef.current = setTimeout(() => {
             setIsSpeaking(false);
@@ -340,6 +446,8 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
   const stop = useCallback(() => {
     if (!isSupported) return;
+    sentenceQueueRef.current = [];
+    isQueuePlayingRef.current = false;
     if (settleTimerRef.current) {
       clearTimeout(settleTimerRef.current);
       settleTimerRef.current = null;
@@ -356,6 +464,8 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   return {
     speak,
     stop,
+    queueSentence,
+    clearQueue,
     isSpeaking,
     isSupported,
     activeVoiceName,

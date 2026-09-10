@@ -108,6 +108,23 @@ export interface ToolResult {
   content: string;
 }
 
+// ── Streaming ────────────────────────────────
+
+/** SSE chunk payload for streaming LLM responses */
+export interface StreamChunk {
+  token?: string;
+  done?: boolean;
+  provider_used?: LLMProvider;
+  tool_calls?: ToolCall[];
+  error?: string;
+}
+
+/** Async generator function signature for streaming provider adapters */
+export type StreamingProviderFn = (
+  messages: ChatMessage[],
+  tools?: ToolDefinition[]
+) => AsyncGenerator<StreamChunk, void, unknown>;
+
 // ── API Request/Response ─────────────────────
 
 export interface ChatRequest {

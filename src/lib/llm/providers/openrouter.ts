@@ -4,7 +4,7 @@
 // ──────────────────────────────────────────────
 
 import OpenAI from 'openai';
-import type { ChatMessage, LLMResponse, ToolDefinition } from '@/types';
+import type { ChatMessage, LLMResponse, ToolDefinition, StreamChunk } from '@/types';
 import type {
   ChatCompletionMessageParam,
   ChatCompletionToolMessageParam,
@@ -172,4 +172,92 @@ export async function callOpenRouter(
       },
     })),
   };
+}
+
+/**
+ * Stream OpenRouter response token-by-token using OpenAI SDK streaming.
+ */
+export async function* streamOpenRouter(
+  messages: ChatMessage[],
+  tools?: ToolDefinition[]
+): AsyncGenerator<StreamChunk, void, unknown> {
+  const openaiMessages = toOpenAIMessages(messages);
+
+  const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
+    model: FREE_MODEL,
+    messages: openaiMessages,
+    temperature: 0.7,
+    max_tokens: 2048,
+    stream: true,
+  };
+
+  if (tools && tools.length > 0) {
+    params.tools = tools as OpenAI.Chat.ChatCompletionCreateParamsStreaming['tools'];
+    params.tool_choice = 'auto';
+  }
+
+  const { client, key } = getNextHealthyClient();
+
+  let stream;
+  try {
+    stream = await client.chat.completions.create(params);
+  } catch (err: any) {
+    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
+      console.warn(`[OpenRouter Stream] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
+      keyCooldowns.set(key, Date.now() + 60000);
+    }
+    throw err;
+  }
+
+  // Accumulate tool calls across chunks
+  const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
+  let hasToolCalls = false;
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices?.[0]?.delta;
+    if (!delta) continue;
+
+    // Handle tool call deltas
+    if (delta.tool_calls) {
+      hasToolCalls = true;
+      for (const tc of delta.tool_calls) {
+        const idx = tc.index;
+        if (!toolCallAccumulator[idx]) {
+          toolCallAccumulator[idx] = {
+            id: tc.id || `or-tc-${idx}-${Date.now()}`,
+            name: tc.function?.name || '',
+            arguments: '',
+          };
+        }
+        if (tc.function?.name) {
+          toolCallAccumulator[idx].name = tc.function.name;
+        }
+        if (tc.function?.arguments) {
+          toolCallAccumulator[idx].arguments += tc.function.arguments;
+        }
+      }
+      continue;
+    }
+
+    // Handle text content deltas
+    if (delta.content) {
+      yield { token: delta.content };
+    }
+  }
+
+  // If tool calls were accumulated, yield them
+  if (hasToolCalls) {
+    const toolCalls = Object.values(toolCallAccumulator).map((tc) => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: {
+        name: tc.name,
+        arguments: tc.arguments,
+      },
+    }));
+    yield { tool_calls: toolCalls, provider_used: 'openrouter' };
+    return;
+  }
+
+  yield { done: true, provider_used: 'openrouter' };
 }
