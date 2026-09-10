@@ -108,49 +108,70 @@ function getNextHealthyClient(): { client: Groq; key: string } {
   return { client, key: fallbackKey };
 }
 
+const GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+
 export async function callGroq(
   messages: ChatMessage[],
   tools?: ToolDefinition[]
 ): Promise<LLMResponse> {
   const groqMessages = toGroqMessages(messages);
-
-  const params: ChatCompletionCreateParamsNonStreaming = {
-    model: 'openai/gpt-oss-120b',
-    messages: groqMessages,
-    temperature: 0.7,
-    max_tokens: 2048,
-    stream: false,
-  };
-
-  if (tools && tools.length > 0) {
-    params.tools = tools as ChatCompletionCreateParamsNonStreaming['tools'];
-    params.tool_choice = 'auto';
-  }
-
   const { client, key } = getNextHealthyClient();
 
-  try {
-    const completion = await client.chat.completions.create(params);
-    const choice = completion.choices[0];
+  let lastErr: any;
 
-    return {
-      content: choice.message.content || '',
-      provider_used: 'groq',
-      tool_calls: choice.message.tool_calls?.map((tc) => ({
-        id: tc.id,
-        type: 'function' as const,
-        function: {
-          name: tc.function.name,
-          arguments: tc.function.arguments,
-        },
-      })),
+  for (const model of GROQ_MODELS) {
+    const params: ChatCompletionCreateParamsNonStreaming = {
+      model,
+      messages: groqMessages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: false,
     };
-  } catch (err: any) {
-    // If rate limit (HTTP 429) or quota exceeded, cool down this specific key for 60s
-    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
-      console.warn(`[Groq Provider] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
-      keyCooldowns.set(key, Date.now() + 60000);
+
+    if (tools && tools.length > 0) {
+      params.tools = tools as ChatCompletionCreateParamsNonStreaming['tools'];
+      params.tool_choice = 'auto';
     }
-    throw err;
+
+    try {
+      const completion = await client.chat.completions.create(params);
+      const choice = completion.choices[0];
+
+      return {
+        content: choice.message.content || '',
+        provider_used: 'groq',
+        tool_calls: choice.message.tool_calls?.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        })),
+      };
+    } catch (err: any) {
+      lastErr = err;
+      const isRateLimit =
+        err?.status === 429 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('rate_limit') ||
+        err?.message?.includes('quota');
+      if (isRateLimit) {
+        console.warn(`[Groq Provider] Model ${model} rate-limited. Trying fallback model in mesh...`);
+        continue;
+      }
+      throw err;
+    }
   }
+
+  // If all candidate models in Groq failed with rate limit, cool down key for 30s
+  if (
+    lastErr?.status === 429 ||
+    lastErr?.message?.includes('429') ||
+    lastErr?.message?.includes('quota')
+  ) {
+    console.warn(`[Groq Provider] Key ...${key.slice(-4)} all models rate-limited. Cooling down.`);
+    keyCooldowns.set(key, Date.now() + 30000);
+  }
+  throw lastErr;
 }

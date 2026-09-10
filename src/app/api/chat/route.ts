@@ -84,10 +84,15 @@ export async function POST(req: NextRequest) {
     let requestPersona: VoicePersona | undefined = undefined;
     try {
       const body = await req.json();
-      clientMessages = body.messages || [];
+      if (Array.isArray(body.messages) && body.messages.length > 0) {
+        clientMessages = body.messages;
+      } else if (typeof body.message === 'string' && body.message.trim()) {
+        clientMessages = [{ role: 'user', content: body.message.trim() }];
+      }
       conversationId = body.conversation_id || '';
-      if (body.voice_persona === 'jarvis' || body.voice_persona === 'friday') {
-        requestPersona = body.voice_persona;
+      const personaVal = body.voice_persona || body.voicePersona;
+      if (personaVal === 'jarvis' || personaVal === 'friday') {
+        requestPersona = personaVal;
       }
     } catch {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
@@ -186,12 +191,13 @@ export async function POST(req: NextRequest) {
 
     // 6.6. Zero-Cost Query Response Cache (check repeat / stateless questions)
     if (lastUserMsg?.content && priorHistory.length === 0) {
-      const cached = queryCache.get(lastUserMsg.content, effectivePersona);
-      if (cached) {
+      const cachedAnswer = queryCache.get(lastUserMsg.content, effectivePersona);
+      if (cachedAnswer) {
         console.log(`[Chat API] Query cache HIT for: "${lastUserMsg.content.slice(0, 30)}..."`);
         return NextResponse.json(
           {
-            message: cached,
+            message: cachedAnswer,
+            reply: cachedAnswer,
             provider_used: 'cache-hit',
             conversation_id: conversationId,
             voice_persona: effectivePersona,
@@ -302,6 +308,7 @@ export async function POST(req: NextRequest) {
     // Return response to user immediately
     return NextResponse.json({
       message: finalContent,
+      reply: finalContent,
       provider_used: response.provider_used,
       conversation_id: conversationId,
       voice_persona: effectivePersona,

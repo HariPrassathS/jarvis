@@ -35,8 +35,8 @@ const rajdhani = Rajdhani({
 export const metadata: Metadata = {
   title: 'J.A.R.V.I.S — Personal AI Assistant',
   description:
-    'Your personal AI assistant — voice-enabled, powered by multiple LLM providers, with a JARVIS-inspired HUD interface.',
-  keywords: ['AI', 'assistant', 'JARVIS', 'voice', 'LLM'],
+    'Your personal AI assistant — voice-enabled, built by Stark Industries, with an authentic JARVIS-inspired HUD interface.',
+  keywords: ['AI', 'assistant', 'JARVIS', 'FRIDAY', 'voice', 'Stark Industries'],
 };
 
 export default function RootLayout({

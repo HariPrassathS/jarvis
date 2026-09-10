@@ -31,11 +31,11 @@ export async function runSystemDiagnostics(profileId: string): Promise<string> {
 
   const dbPing = Date.now() - start;
 
-  return `J.A.R.V.I.S System Telemetry Report:
-- Core Status: NOMINAL / OPTIMAL
-- Primary Brain: Google Gemini 2.5 Flash (Active)
-- Secondary Neural Mesh: Groq (openai/gpt-oss-120b)
-- Failover Guard: OpenRouter Free Tier
+  return `Stark Systems Telemetry Report:
+- Core Matrix Status: NOMINAL / OPTIMAL
+- Primary Neural Matrix: Stark Neural Array (Active)
+- High-Velocity Tactical Coprocessor: High-Frequency Neural Mesh (Online)
+- Redundant Failover Array: Quantum Mesh Satellite Uplink (Standby)
 - Database Telemetry: ${dbStatus} (${dbPing}ms ping)
 - Stored Memory Engrams: ${memoryCount} items
 - Historical Interaction Buffer: ${messageCount} messages

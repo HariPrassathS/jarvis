@@ -173,19 +173,21 @@ export default function BootSequenceLanding() {
           <SignInButton />
         </div>
 
-        {/* Footer — powered by line */}
+        {/* Footer — in-universe brand line */}
         <p
-          className="mt-4 sm:mt-6 text-[10px] sm:text-[11px] font-mono tracking-wider text-center transition-opacity duration-700 ease-out"
+          className="mt-4 sm:mt-6 text-[10px] sm:text-[11px] font-mono tracking-wider text-center transition-opacity duration-700 ease-out select-none"
           style={{
             opacity: phaseIndex >= 5 ? 1 : 0,
           }}
         >
-          <span className="text-[#4DE8E8]/30">Powered by </span>
-          <span className="text-[#4DE8E8]/50">Groq</span>
-          <span className="inline-block mx-1.5 text-[#4DE8E8]/70">·</span>
-          <span className="text-[#4DE8E8]/50">Gemini</span>
-          <span className="inline-block mx-1.5 text-[#4DE8E8]/70">·</span>
-          <span className="text-[#4DE8E8]/50">OpenRouter</span>
+          <span className="text-[#4DE8E8]/40">Powered by </span>
+          <span
+            className="text-[#4DE8E8]/75 hover:text-[#4DE8E8] transition-all duration-300 tracking-widest cursor-default font-semibold inline-block relative group"
+            title="Stark Industries // Advanced Systems Division"
+          >
+            Stark Industries
+            <span className="absolute -bottom-0.5 left-0 w-0 h-[1px] bg-[#4DE8E8] transition-all duration-300 group-hover:w-full opacity-70 shadow-[0_0_8px_#4DE8E8]" />
+          </span>
         </p>
       </div>
     </div>

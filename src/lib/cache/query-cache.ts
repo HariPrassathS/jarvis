@@ -49,6 +49,22 @@ class QueryCache {
       return false;
     }
 
+    // Disallow caching questions about origins/creator to ensure natural, lively conversational variation
+    if (
+      text.includes('created you') ||
+      text.includes('built you') ||
+      text.includes('made you') ||
+      text.includes('developed you') ||
+      text.includes('your creator') ||
+      text.includes('your developer') ||
+      text.includes('who made') ||
+      text.includes('who built') ||
+      text.includes('who created') ||
+      text.includes('who developed')
+    ) {
+      return false;
+    }
+
     return true;
   }
 
