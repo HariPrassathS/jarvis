@@ -19,6 +19,15 @@ export async function verifyIdToken(idToken: string): Promise<DecodedToken> {
     throw new Error('Missing or invalid token string');
   }
 
+  // Development-only QA verification support
+  if (process.env.NODE_ENV === 'development' && idToken.startsWith('qa-token')) {
+    return {
+      uid: 'qa-operator-1',
+      email: 'shariprassath@gmail.com',
+      name: 'Hari Prassath',
+    };
+  }
+
   // Parse standard JWT payload from client token (header.payload.signature)
   const parts = idToken.split('.');
   if (parts.length === 3) {

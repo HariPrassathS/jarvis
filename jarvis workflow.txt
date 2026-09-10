@@ -328,5 +328,29 @@ J.A.R.V.I.S is engineered to deliver a seamless experience across all viewports:
    - Add `jarvis-27.vercel.app` to Firebase Authentication -> Settings -> Authorized domains.
 
 ================================================================================
+SECTION 10: PHASE 7 — PERSISTENT MEMORY & CONVERSATION CONTINUITY
+================================================================================
+1. AUTOMATIC BACKGROUND MEMORY EXTRACTION:
+   - File: `src/lib/llm/memory-extractor.ts`
+   - Runs as a fire-and-forget background Promise AFTER the user response has been dispatched.
+   - Extracts durable facts (projects, preferences, names, personal details) from casual conversation.
+   - Saves facts to Supabase `memory` table via `rememberFact(profileId, key, value)`.
+   - Invalidates memory cache `memories:${profileId}` in real-time.
+
+2. UNCONDITIONAL BASELINE MEMORY INJECTION:
+   - File: `src/lib/llm/system-prompt.ts` & `src/app/api/chat/route.ts`
+   - On every request, `recallMemories(profile.id)` is fetched unconditionally before LLM invocation.
+   - Injected into system prompt under `## Long-term known facts about this operator:`.
+   - Baseline memory recall is never gated behind a tool call.
+
+3. CONVERSATION REHYDRATION & SESSION RESTORATION:
+   - Route: `GET /api/chat/history` (`src/app/api/chat/history/route.ts`)
+   - Client Hook: `src/hooks/useChat.ts`
+   - On page load or authentication, checks `localStorage` for `jarvis_active_conversation_id`.
+   - Rehydrates the active conversation thread and full historical messages into the UI transcript drawer.
+   - Slices the last 20 messages for multi-turn conversational context in `/api/chat`.
+   - "+ NEW" button in HUD explicitly clears active conversation ID and starts a fresh thread.
+
+================================================================================
                      END OF WORKFLOW SPECIFICATION
 ================================================================================

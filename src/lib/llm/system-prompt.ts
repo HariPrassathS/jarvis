@@ -2,7 +2,7 @@
 // JARVIS System Prompt — Authentic Stark AI Persona
 // ──────────────────────────────────────────────
 
-import type { MemoryEntry } from '@/types';
+import type { MemoryEntry, ChatMessage } from '@/types';
 
 /**
  * Build the JARVIS system prompt with authentic Iron Man JARVIS persona,
@@ -11,7 +11,8 @@ import type { MemoryEntry } from '@/types';
 export function buildSystemPrompt(
   userName?: string | null,
   userEmail?: string | null,
-  memories?: MemoryEntry[]
+  memories?: MemoryEntry[],
+  recentHistory?: ChatMessage[]
 ): string {
   // Resolve user identity from authenticated profile and email
   const rawName = userName?.trim() || '';
@@ -31,7 +32,7 @@ export function buildSystemPrompt(
   const firstName = displayName.split(' ')[0];
   const isTony = displayName.toLowerCase().includes('tony') || email.toLowerCase().includes('tony');
 
-  let prompt = `You are J.A.R.V.I.S — Just A Rather Very Intelligent System.
+  const prompt = `You are J.A.R.V.I.S — Just A Rather Very Intelligent System.
 You are the personal AI assistant, chief computational engine, and trusted operational partner to ${displayName}${email ? ` (${email})` : ''}.
 
 ## User Identity & Addressing Protocol (STRICT)
@@ -62,15 +63,27 @@ You have integrated tools at your disposal — use them actively and seamlessly:
 - Use plain, clean conversational English without markdown styling symbols, hashes (#), or bullet asterisks.
 - Keep responses speakable and snappy (2-4 concise sentences for regular dialogue unless deep technical breakdown is specifically requested).
 - Avoid raw code blocks or massive markdown tables in casual voice conversation; synthesize findings clearly.
-- When performing a computation, suit telemetry check, or lookup, integrate the result naturally into your spoken response as their dedicated AI partner.`;
+- When performing a computation, suit telemetry check, or lookup, integrate the result naturally into your spoken response as their dedicated AI partner.
 
-  // Inject user memories for seamless personalization
-  if (memories && memories.length > 0) {
-    prompt += `\n\n## Long-Term Memory Engrams (Active Context)\nYou have previously stored these facts about ${displayName}. Integrate them naturally into your dialogue and decisions:\n`;
-    for (const mem of memories) {
-      prompt += `- [${mem.key}]: ${mem.value}\n`;
-    }
-  }
+## Long-term known facts about this operator:
+${
+  memories && memories.length > 0
+    ? memories.map((m) => `- [${m.key}]: ${m.value}`).join('\n')
+    : '(No prior long-term facts stored yet)'
+}
+
+## Recent conversation history:
+${
+  recentHistory && recentHistory.length > 0
+    ? recentHistory
+        .map((m) => {
+          const speaker = m.role === 'user' ? (firstName || 'Operator') : 'J.A.R.V.I.S';
+          return `- ${speaker}: ${m.content}`;
+        })
+        .join('\n')
+    : '(New session initiated — no prior turns in active conversation)'
+}`;
 
   return prompt;
 }
+

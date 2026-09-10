@@ -13,6 +13,7 @@ import { buildSystemPrompt } from '@/lib/llm/system-prompt';
 import { toolDefinitions } from '@/lib/tools/definitions';
 import { executeToolCalls } from '@/lib/tools/executor';
 import { recallMemories } from '@/lib/tools/memory';
+import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import type { ChatMessage } from '@/types';
 
@@ -86,24 +87,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
 
-    // 4. Resolve conversation ID (generate client-safe UUID if needed)
+    // 4. Resolve conversation ID (generate client-safe standard UUID v4)
     if (!conversationId) {
-      const cryptoId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`;
-      conversationId = cryptoId;
-      // Async fire-and-forget conversation record
-      Promise.resolve(
-        supabase
+      conversationId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : '00000000-0000-4000-8000-000000000000';
+    }
+
+    // Retain up to the last 20 messages for rich conversational context while respecting token budget
+    const contextualMessages = clientMessages.slice(-20);
+    const lastUserMsg = contextualMessages[contextualMessages.length - 1];
+    const priorHistory = contextualMessages.slice(0, -1);
+
+    // Fast cached conversation record assurance
+    const convCacheKey = `conv:${conversationId}`;
+    if (!jarvisCache.get(convCacheKey)) {
+      try {
+        const { data: existingConv } = await supabase
           .from('conversations')
-          .insert({
+          .select('id')
+          .eq('id', conversationId)
+          .maybeSingle();
+
+        if (!existingConv) {
+          await supabase.from('conversations').insert({
             id: conversationId,
             profile_id: profile.id,
-            title: clientMessages[clientMessages.length - 1]?.content?.slice(0, 80) || 'Active Dialogue',
-          })
-      ).catch(() => {});
+            title: lastUserMsg?.content?.slice(0, 80) || 'Active Dialogue',
+          });
+        }
+        jarvisCache.set(convCacheKey, true, 3600000); // 1 hour TTL
+      } catch (convErr) {
+        console.warn('[Chat API] Conversation record check warning:', convErr);
+      }
     }
 
     // 5. Asynchronously persist user message (non-blocking for ultra-fast LLM invocation)
-    const lastUserMsg = clientMessages[clientMessages.length - 1];
     if (lastUserMsg?.role === 'user') {
       Promise.resolve(
         supabase
@@ -144,11 +161,17 @@ export async function POST(req: NextRequest) {
       jarvisCache.set(settingsCacheKey, preferredProvider, 600000);
     }
 
-    // 7. Prepare messages for LLM (Personalized to authenticated profile name & email)
-    const systemPrompt = buildSystemPrompt(profile.display_name, profile.email || profileEmail, memories);
+    // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History)
+    const systemPrompt = buildSystemPrompt(
+      profile.display_name,
+      profile.email || profileEmail,
+      memories,
+      priorHistory
+    );
+
     const llmMessages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      ...clientMessages,
+      ...contextualMessages,
     ];
 
     // 8. Call LLM Router (Priority: Groq / Gemini)
@@ -161,7 +184,6 @@ export async function POST(req: NextRequest) {
       });
     } catch (llmErr) {
       console.error('[Chat API] LLM Router error:', llmErr);
-      const errMsg = llmErr instanceof Error ? llmErr.message : String(llmErr);
       
       // If API keys are missing on Vercel, return a helpful vocal HUD response rather than crashing the client with HTTP 500
       return NextResponse.json({
@@ -217,6 +239,13 @@ export async function POST(req: NextRequest) {
           provider_used: response.provider_used,
         })
     ).catch(() => {});
+
+    // 11. Background durable memory extraction (fire-and-forget, zero latency overhead on client)
+    if (lastUserMsg?.content && finalContent) {
+      Promise.resolve()
+        .then(() => extractAndStoreMemories(profile.id, lastUserMsg.content, finalContent))
+        .catch((err) => console.warn('[Chat API] Background memory extraction warning:', err));
+    }
 
     // Return response to user immediately
     return NextResponse.json({

@@ -103,6 +103,11 @@ export async function callGemini(
     }
   }
 
+  // Gemini requires the first history message to have role 'user'
+  while (history.length > 0 && history[0].role !== 'user') {
+    history.shift();
+  }
+
   const lastMessage = chatMessages[chatMessages.length - 1];
 
   // Build model config

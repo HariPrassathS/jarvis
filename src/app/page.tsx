@@ -24,6 +24,7 @@ export default function Home() {
   const {
     messages,
     isLoading,
+    isHistoryLoading,
     error,
     providerUsed,
     sendMessage,
@@ -76,10 +77,21 @@ export default function Home() {
   const [chatExpanded, setChatExpanded] = useState(false);
   const lastSpokenIndexRef = useRef<number>(-1);
   const greetedRef = useRef(false);
+  const initialHistoryProcessedRef = useRef(false);
 
-  // ── Greet authenticated user according to their profile/email ──
+  // ── Sync lastSpokenIndex when past history is loaded from Supabase to prevent re-speaking old turns ──
   useEffect(() => {
-    if (!user || greetedRef.current || messages.length > 0) return;
+    if (!isHistoryLoading && !initialHistoryProcessedRef.current) {
+      initialHistoryProcessedRef.current = true;
+      if (messages.length > 0) {
+        lastSpokenIndexRef.current = messages.length - 1;
+      }
+    }
+  }, [isHistoryLoading, messages.length]);
+
+  // ── Greet authenticated user only on clean/empty session start ──
+  useEffect(() => {
+    if (!user || isHistoryLoading || greetedRef.current || messages.length > 0) return;
     greetedRef.current = true;
 
     const rawName = profile?.display_name || user.displayName;
@@ -95,7 +107,7 @@ export default function Home() {
 
     const greeting = `Good day, ${firstName}. All systems are online and listening. How may I assist you today?`;
     setInitialGreeting(greeting);
-  }, [user, profile, messages.length, setInitialGreeting]);
+  }, [user, profile, isHistoryLoading, messages.length, setInitialGreeting]);
 
   // ── Determine JARVIS state dynamically without effect loops ──
   const jarvisState: JarvisState = isSpeaking
