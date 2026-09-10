@@ -103,17 +103,11 @@ export async function callGemini(
     }
   }
 
-  // Gemini requires the first history message to have role 'user'
-  while (history.length > 0 && history[0].role !== 'user') {
-    history.shift();
-  }
-
-  const lastMessage = chatMessages[chatMessages.length - 1];
-
   // Build model config
   const modelConfig: Parameters<typeof genAI.getGenerativeModel>[0] = {
     model: 'gemini-2.5-flash',
     generationConfig,
+    ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
   };
 
   if (tools && tools.length > 0) {
@@ -124,13 +118,31 @@ export async function callGemini(
 
   const model = genAI.getGenerativeModel(modelConfig);
 
+  // Gemini history must alternate user -> model -> user -> model and end with model before sendMessage
+  const validHistory: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = [];
+  let expectedRole: 'user' | 'model' = 'user';
+  for (const h of history) {
+    if (h.role === 'function' || h.role === 'user') {
+      if (expectedRole === 'user') {
+        validHistory.push(h as any);
+        expectedRole = 'model';
+      }
+    } else if (h.role === 'model') {
+      if (expectedRole === 'model') {
+        validHistory.push(h as any);
+        expectedRole = 'user';
+      }
+    }
+  }
+  if (validHistory.length > 0 && validHistory[validHistory.length - 1].role === 'user') {
+    validHistory.pop();
+  }
+
   const chat = model.startChat({
-    history: history as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
-    ...(systemMsg
-      ? { systemInstruction: { role: 'user' as const, parts: [{ text: systemMsg.content }] } }
-      : {}),
+    history: validHistory as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
   });
 
+  const lastMessage = chatMessages[chatMessages.length - 1];
   let messageToSend = lastMessage?.content || '';
   if (lastMessage?.role === 'tool') {
     // If last message is a tool response, send function response

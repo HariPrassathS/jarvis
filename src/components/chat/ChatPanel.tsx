@@ -6,7 +6,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, VoicePersona } from '@/types';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -15,6 +15,7 @@ interface ChatPanelProps {
   onSend: (message: string) => void;
   isExpanded: boolean;
   onToggle: () => void;
+  persona?: VoicePersona;
 }
 
 export default function ChatPanel({
@@ -24,9 +25,11 @@ export default function ChatPanel({
   onSend,
   isExpanded,
   onToggle,
+  persona = 'jarvis',
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isFriday = persona === 'friday';
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -59,8 +62,16 @@ export default function ChatPanel({
             {/* Drawer Header */}
             <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 border-b border-[#4DE8E8]/20 bg-[#4DE8E8]/5">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#4DE8E8] animate-pulse" />
-                <span className="text-xs font-mono tracking-widest text-[#4DE8E8] uppercase font-medium">
+                <div
+                  className={`w-2 h-2 rounded-full animate-pulse ${
+                    isFriday ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'bg-[#4DE8E8]'
+                  }`}
+                />
+                <span
+                  className={`text-xs font-mono tracking-widest uppercase font-medium ${
+                    isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+                  }`}
+                >
                   Live Neural Transcript ({messages.length})
                 </span>
               </div>
@@ -97,8 +108,20 @@ export default function ChatPanel({
                     }`}
                   >
                     {msg.role !== 'user' && (
-                      <div className="flex-shrink-0 w-6 h-6 rounded-md bg-[#4DE8E8]/15 border border-[#4DE8E8]/40 flex items-center justify-center">
-                        <span className="text-[10px] font-mono text-[#4DE8E8] font-bold">J</span>
+                      <div
+                        className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
+                          isFriday
+                            ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
+                            : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
+                        }`}
+                      >
+                        <span
+                          className={`text-[10px] font-mono font-bold ${
+                            isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+                          }`}
+                        >
+                          {isFriday ? 'F' : 'J'}
+                        </span>
                       </div>
                     )}
 
@@ -109,8 +132,20 @@ export default function ChatPanel({
                           : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
                       }`}
                     >
-                      <div className="text-[9px] text-[#4DE8E8]/50 uppercase mb-1 tracking-wider font-semibold">
-                        {msg.role === 'user' ? 'USER' : 'JARVIS CORE'}
+                      <div
+                        className={`text-[9px] uppercase mb-1 tracking-wider font-semibold ${
+                          msg.role === 'user'
+                            ? 'text-[#4DE8E8]/50'
+                            : isFriday
+                            ? 'text-amber-300/70'
+                            : 'text-[#4DE8E8]/50'
+                        }`}
+                      >
+                        {msg.role === 'user'
+                          ? 'USER'
+                          : isFriday
+                          ? 'FRIDAY CORE'
+                          : 'JARVIS CORE'}
                       </div>
                       {msg.content}
                     </div>
@@ -195,7 +230,7 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask or command JARVIS..."
+            placeholder={isFriday ? 'Ask or command FRIDAY...' : 'Ask or command JARVIS...'}
             disabled={isLoading}
             className="flex-1 bg-transparent border-0 px-2.5 sm:px-3.5 py-1 text-xs sm:text-sm text-white/90 placeholder-white/30
                        font-mono focus:outline-none disabled:opacity-50 min-w-0"

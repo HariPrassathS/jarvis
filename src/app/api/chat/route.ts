@@ -15,7 +15,7 @@ import { executeToolCalls } from '@/lib/tools/executor';
 import { recallMemories } from '@/lib/tools/memory';
 import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, VoicePersona } from '@/types';
 
 export async function POST(req: NextRequest) {
   try {
@@ -79,10 +79,14 @@ export async function POST(req: NextRequest) {
     // 3. Parse request payload
     let clientMessages: ChatMessage[] = [];
     let conversationId = '';
+    let requestPersona: VoicePersona | undefined = undefined;
     try {
       const body = await req.json();
       clientMessages = body.messages || [];
       conversationId = body.conversation_id || '';
+      if (body.voice_persona === 'jarvis' || body.voice_persona === 'friday') {
+        requestPersona = body.voice_persona;
+      }
     } catch {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
@@ -133,16 +137,16 @@ export async function POST(req: NextRequest) {
       ).catch(() => {});
     }
 
-    // 6. Fast parallel resolution of memories and preferred provider
+    // 6. Fast parallel resolution of memories and preferred provider / persona
     const settingsCacheKey = `settings:${profile.id}`;
-    const cachedProvider = jarvisCache.get<any>(settingsCacheKey);
+    const cachedSettings = jarvisCache.get<any>(settingsCacheKey);
 
     const getSettingsAsync = async () => {
-      if (cachedProvider) return { data: { preferred_provider: cachedProvider } };
+      if (cachedSettings) return { data: cachedSettings };
       try {
         const res = await supabase
           .from('settings')
-          .select('preferred_provider')
+          .select('preferred_provider, voice_persona')
           .eq('profile_id', profile.id)
           .single();
         return res;
@@ -156,17 +160,21 @@ export async function POST(req: NextRequest) {
       getSettingsAsync(),
     ]);
 
-    const preferredProvider = cachedProvider || settingsData?.data?.preferred_provider;
-    if (!cachedProvider && preferredProvider) {
-      jarvisCache.set(settingsCacheKey, preferredProvider, 600000);
+    const settingsObj = cachedSettings || settingsData?.data;
+    const preferredProvider = settingsObj?.preferred_provider;
+    const effectivePersona: VoicePersona = requestPersona || settingsObj?.voice_persona || 'jarvis';
+
+    if (!cachedSettings && settingsObj) {
+      jarvisCache.set(settingsCacheKey, settingsObj, 600000);
     }
 
-    // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History)
+    // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History + Persona Tone)
     const systemPrompt = buildSystemPrompt(
       profile.display_name,
       profile.email || profileEmail,
       memories,
-      priorHistory
+      priorHistory,
+      effectivePersona
     );
 
     const llmMessages: ChatMessage[] = [
@@ -191,6 +199,7 @@ export async function POST(req: NextRequest) {
           'I apologize, sir. My core neural processing units are currently unconfigured. Please ensure your LLM provider API keys (GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) are added to your Vercel Project Settings under Environment Variables.',
         provider_used: 'system-diagnostic',
         conversation_id: conversationId,
+        voice_persona: effectivePersona,
       });
     }
 
@@ -252,6 +261,7 @@ export async function POST(req: NextRequest) {
       message: finalContent,
       provider_used: response.provider_used,
       conversation_id: conversationId,
+      voice_persona: effectivePersona,
     });
   } catch (error) {
     console.error('Chat API error:', error);

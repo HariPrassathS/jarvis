@@ -7,7 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import type { ChatMessage, LLMProvider } from '@/types';
+import type { ChatMessage, LLMProvider, VoicePersona } from '@/types';
 
 const STORAGE_CONV_KEY = 'jarvis_active_conversation_id';
 
@@ -18,7 +18,7 @@ interface UseChatReturn {
   error: string | null;
   providerUsed: LLMProvider | null;
   conversationId: string | null;
-  sendMessage: (content: string) => Promise<void>;
+  sendMessage: (content: string, persona?: VoicePersona) => Promise<void>;
   clearChat: () => void;
   setInitialGreeting: (content: string) => void;
 }
@@ -112,7 +112,7 @@ export function useChat(): UseChatReturn {
   }, [user]);
 
   // ── Send user message with full multi-turn conversational context ──
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, persona?: VoicePersona) => {
     const currentUser = userRef.current;
     if (!currentUser || !content.trim()) return;
 
@@ -136,6 +136,7 @@ export function useChat(): UseChatReturn {
         body: JSON.stringify({
           messages: updatedMessages.slice(-20), // Slice to last 20 messages for prompt efficiency
           conversation_id: conversationIdRef.current,
+          voice_persona: persona,
         }),
       });
 

@@ -46,7 +46,8 @@ create table if not exists settings (
   profile_id uuid primary key references profiles(id) on delete cascade,
   voice_enabled boolean default true,
   preferred_provider text default 'groq',
-  theme text default 'dark-hud'
+  theme text default 'dark-hud',
+  voice_persona text default 'jarvis'
 );
 
 -- ── Indexes ────────────────────────────────────

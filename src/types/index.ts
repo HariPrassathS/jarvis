@@ -8,6 +8,9 @@ export type JarvisState = 'idle' | 'listening' | 'thinking' | 'speaking';
 /** LLM provider identifiers */
 export type LLMProvider = 'groq' | 'gemini' | 'openrouter';
 
+/** Dual voice persona: JARVIS (male butler) or FRIDAY (female tactical) */
+export type VoicePersona = 'jarvis' | 'friday';
+
 /** Chat message roles */
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
@@ -52,6 +55,7 @@ export interface UserSettings {
   voice_enabled: boolean;
   preferred_provider: LLMProvider;
   theme: string;
+  voice_persona: VoicePersona;
 }
 
 // ── LLM Router ───────────────────────────────
@@ -109,12 +113,14 @@ export interface ToolResult {
 export interface ChatRequest {
   messages: ChatMessage[];
   conversation_id?: string;
+  voice_persona?: VoicePersona;
 }
 
 export interface ChatAPIResponse {
   message: string;
   provider_used: LLMProvider;
   conversation_id: string;
+  voice_persona?: VoicePersona;
 }
 
 export interface AuthSessionRequest {

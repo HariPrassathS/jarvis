@@ -352,6 +352,40 @@ SECTION 10: PHASE 7 — PERSISTENT MEMORY & CONVERSATION CONTINUITY
    - "+ NEW" button in HUD explicitly clears active conversation ID and starts a fresh thread.
 
 ================================================================================
+SECTION 11: DUAL VOICE PERSONA SYSTEM (JARVIS & FRIDAY)
+================================================================================
+1. PERSONA SPECIFICATIONS & ARCHITECTURE:
+   - Male "JARVIS":
+     * Tone & Identity: British formal cadence, calm, dry wit, measured delivery.
+     * Salutation: Addresses operator as "sir" or "boss".
+     * Acoustic Profile: pitch: 0.95, rate: 0.98.
+     * UI Labeling: "J.A.R.V.I.S // CORE v1.0", Avatar [J], cyan accents.
+   - Female "FRIDAY":
+     * Tone & Identity: Agile, tactical coordinator, warmer conversational flow, subtle Irish charm.
+     * Salutation: Addresses operator as "boss" or by first name.
+     * Acoustic Profile: pitch: 1.08, rate: 1.03.
+     * UI Labeling: "F.R.I.D.A.Y // CORE v1.0", Avatar [F], amber/gold highlights.
+
+2. DATABASE SCHEMA & PER-OPERATOR PERSISTENCE:
+   - Supabase `settings` table column: `voice_persona text default 'jarvis'` ('jarvis' | 'friday').
+   - Immediate persistence on switch via `PATCH /api/settings`.
+   - Loaded on session initialization via `GET /api/settings` and cached in `localStorage('jarvis_voice_persona')`.
+
+3. RANKED WEB SPEECH API ENGINE:
+   - File: `src/hooks/useSpeechSynthesis.ts`
+   - Zero external paid TTS dependency; 100% browser-native Web Speech API.
+   - Ranked candidate match lists:
+     * JARVIS: Google UK English Male, Daniel, Arthur, Microsoft Ryan, Microsoft Guy, George, Oliver, en-GB male fallbacks.
+     * FRIDAY: Google UK English Female, Samantha, Microsoft Aria, Microsoft Sonia, Karen, Moira, en-GB/en-IE female fallbacks.
+   - Asynchronous voice list resolution: listens to `window.speechSynthesis.onvoiceschanged` and `voiceschanged` event to solve Chrome's empty-voices initial call.
+   - Gender heuristic substring matching fallback before defaulting to system voice.
+
+4. SEAMLESS REAL-TIME SWITCHING:
+   - Mid-conversation persona switching requires 0 reloads and never crashes the active session.
+   - Takes effect immediately on the next spoken utterance and LLM prompt.
+
+================================================================================
                      END OF WORKFLOW SPECIFICATION
 ================================================================================
+
 
