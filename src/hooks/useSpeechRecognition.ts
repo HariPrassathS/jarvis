@@ -5,6 +5,7 @@
 // ──────────────────────────────────────────────
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 
 export interface UseSpeechRecognitionOptions {
   onSpeechComplete?: (text: string) => void;
@@ -52,6 +53,11 @@ interface SpeechRecognitionInstance extends EventTarget {
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
   onstart: (() => void) | null;
+  onaudiostart: (() => void) | null;
+  onsoundstart: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onspeechend: (() => void) | null;
+  onnomatch: (() => void) | null;
 }
 
 declare global {
@@ -115,12 +121,18 @@ export function useSpeechRecognition(
   useEffect(() => {
     if (typeof navigator !== 'undefined') {
       const ua = navigator.userAgent;
-      const isIOS = /iPhone|iPad|iPod/i.test(ua);
-      const isMobileSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua) && /Mobile/i.test(ua);
+      const isIOS =
+        /iPhone|iPad|iPod/i.test(ua) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isMobileSafari =
+        (/Safari/i.test(ua) && !/Chrome|CriOS/i.test(ua) && /Mobile/i.test(ua)) ||
+        /CriOS|FxiOS/i.test(ua);
+
       if (isIOS || isMobileSafari) {
         setIsTapToTalk(true);
         isTapToTalkRef.current = true;
-        setModeReason('Mobile Safari touch gesture required');
+        setModeReason('Mobile iOS WebKit: Tap-to-Talk active');
+        diagnosticLogger.log('system', 'iOS WebKit detected -> Tap-to-Talk active');
       }
     }
   }, []);
@@ -132,12 +144,15 @@ export function useSpeechRecognition(
       recognitionRef.current.start();
       isStartedRef.current = true;
       setIsListening(true);
+      diagnosticLogger.log('speech', 'SpeechRecognition.start() requested');
     } catch (e: any) {
       if (e?.name === 'InvalidStateError' || e?.message?.includes('already started')) {
         isStartedRef.current = true;
         setIsListening(true);
+        diagnosticLogger.log('speech', 'SpeechRecognition already running (InvalidState)');
       } else {
         console.warn('[Always-On Voice] Recognition start error:', e);
+        diagnosticLogger.log('speech', `Start error: ${e?.message || e}`);
       }
     }
   }, []);
@@ -151,6 +166,7 @@ export function useSpeechRecognition(
     }
     try {
       recognitionRef.current.stop();
+      diagnosticLogger.log('speech', 'SpeechRecognition.stop() invoked');
     } catch {}
     isStartedRef.current = false;
     setIsListening(false);
@@ -160,6 +176,11 @@ export function useSpeechRecognition(
   const triggerTapToTalk = useCallback(() => {
     if (!recognitionRef.current || isLoadingRef.current) return;
 
+    diagnosticLogger.log('speech', 'Tap-to-Talk triggered by operator touch', {
+      isStarted: isStartedRef.current,
+      hasText: !!accumulatedTextRef.current.trim(),
+    });
+
     if (isStartedRef.current) {
       // User tapped while active -> stop and process
       stopEngine();
@@ -168,6 +189,7 @@ export function useSpeechRecognition(
         accumulatedTextRef.current = '';
         setInterimTranscript('');
         setIsUserSpeaking(false);
+        diagnosticLogger.log('speech', `Turn completed via touch stop: "${text}"`);
         onSpeechCompleteRef.current(text);
       }
     } else {
@@ -184,6 +206,7 @@ export function useSpeechRecognition(
   useEffect(() => {
     if (!isSupported) {
       setPermissionStatus('unsupported');
+      diagnosticLogger.log('speech', 'SpeechRecognition not supported in browser');
       return;
     }
 
@@ -197,11 +220,41 @@ export function useSpeechRecognition(
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
+      recognition.onstart = () => {
+        isStartedRef.current = true;
+        setIsListening(true);
+        setPermissionStatus('granted');
+        rapidAbortCountRef.current = 0;
+        diagnosticLogger.log('speech', 'SpeechRecognition onstart: Listening active');
+      };
+
+      recognition.onaudiostart = () => {
+        diagnosticLogger.log('speech', 'Audio capture active (onaudiostart)');
+      };
+
+      recognition.onsoundstart = () => {
+        diagnosticLogger.log('speech', 'Sound detected (onsoundstart)');
+      };
+
+      recognition.onspeechstart = () => {
+        diagnosticLogger.log('speech', 'Human speech detected (onspeechstart)');
+        setIsUserSpeaking(true);
+      };
+
+      recognition.onspeechend = () => {
+        diagnosticLogger.log('speech', 'Speech pause/end detected (onspeechend)');
+      };
+
+      recognition.onnomatch = () => {
+        diagnosticLogger.log('speech', 'No speech pattern match (onnomatch)');
+      };
+
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         if (isMutedRef.current) return;
 
         if (isSpeakingRef.current) {
           console.log('[Always-On Voice] ⚡ User barge-in detected. Interrupting JARVIS.');
+          diagnosticLogger.log('speech', 'User barge-in detected -> Interrupting speech');
           if (onBargeInRef.current) {
             onBargeInRef.current();
           }
@@ -232,6 +285,11 @@ export function useSpeechRecognition(
           setInterimTranscript(currentSpoken);
           setIsUserSpeaking(true);
 
+          diagnosticLogger.log(
+            'speech',
+            finalPart ? `Final: "${finalPart.trim()}"` : `Interim: "${interimPart.trim()}"`
+          );
+
           if (silenceTimeoutRef.current) {
             clearTimeout(silenceTimeoutRef.current);
           }
@@ -240,6 +298,7 @@ export function useSpeechRecognition(
           silenceTimeoutRef.current = setTimeout(() => {
             if (capturedSpoken.length > 1 && !isLoadingRef.current) {
               console.log('[Always-On Voice] 🎙️ Turn complete:', capturedSpoken);
+              diagnosticLogger.log('speech', `Turn complete: "${capturedSpoken}"`);
               accumulatedTextRef.current = '';
               setInterimTranscript('');
               setIsUserSpeaking(false);
@@ -257,19 +316,15 @@ export function useSpeechRecognition(
         }
       };
 
-      recognition.onstart = () => {
-        isStartedRef.current = true;
-        setIsListening(true);
-        setPermissionStatus('granted');
-      };
-
       recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        diagnosticLogger.log('speech', `onerror: ${event.error}`, { error: event.error });
+
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           setPermissionStatus('denied');
           setIsListening(false);
           isStartedRef.current = false;
         } else if (event.error === 'no-speech') {
-          // Expected during pauses
+          // Normal pause in mobile Chrome/Android; do not increment rapidAbortCount
         } else if (event.error === 'aborted') {
           rapidAbortCountRef.current += 1;
           // If 3+ rapid aborts occur on continuous mode, gracefully switch to tap-to-talk!
@@ -278,6 +333,7 @@ export function useSpeechRecognition(
             setIsTapToTalk(true);
             isTapToTalkRef.current = true;
             setModeReason('Continuous mic restricted by browser — tap-to-talk mode active');
+            diagnosticLogger.log('speech', 'Continuous restricted -> Switched to Tap-to-Talk');
           }
         } else {
           console.warn('[Always-On Voice] Recognition status:', event.error);
@@ -288,6 +344,7 @@ export function useSpeechRecognition(
       recognition.onend = () => {
         isStartedRef.current = false;
         setIsListening(false);
+        diagnosticLogger.log('speech', 'recognition.onend event');
 
         // Do not auto-restart if muted, in tap-to-talk mode, or tab is hidden
         if (
@@ -298,7 +355,7 @@ export function useSpeechRecognition(
         ) {
           restartTimerRef.current = setTimeout(() => {
             startEngine();
-          }, 200);
+          }, 300);
         }
       };
 
@@ -308,8 +365,9 @@ export function useSpeechRecognition(
       if (!initialMuted && !isTapToTalkRef.current) {
         startEngine();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Always-On Voice] Engine initialization error:', err);
+      diagnosticLogger.log('speech', `Init error: ${err?.message || err}`);
     }
 
     // ── Tab Visibility & Lock Screen Handling ──

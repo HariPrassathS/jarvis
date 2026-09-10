@@ -25,6 +25,7 @@ import AudioSentryToggle from '@/components/voice/AudioSentryToggle';
 import AtmosphericField from '@/components/hud/AtmosphericField';
 import SignInButton from '@/components/auth/SignInButton';
 import IntelligenceSelection from '@/components/auth/IntelligenceSelection';
+import MobileDebugOverlay from '@/components/debug/MobileDebugOverlay';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
@@ -81,6 +82,25 @@ export default function Home() {
   const [entranceStep, setEntranceStep] = useState<LandingEntranceStep>('black');
   const [titleRevealCount, setTitleRevealCount] = useState(0);
   const [customAuthError, setCustomAuthError] = useState<string | null>(null);
+
+  // ── Mobile Telemetry Debug Overlay Toggle (3-tap gesture) ──
+  const [debugOverlayVisible, setDebugOverlayVisible] = useState(false);
+  const tapCountRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
+
+  const handleDebugGesture = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapTimeRef.current < 600) {
+      tapCountRef.current += 1;
+      if (tapCountRef.current >= 3) {
+        setDebugOverlayVisible((prev) => !prev);
+        tapCountRef.current = 0;
+      }
+    } else {
+      tapCountRef.current = 1;
+    }
+    lastTapTimeRef.current = now;
+  }, []);
 
   // ── Sync narrativePhase on authentication state changes ──
   useEffect(() => {
@@ -676,9 +696,10 @@ export default function Home() {
                   />
                 </motion.div>
 
-                {/* In-Universe Footer Brand Line */}
+                {/* In-Universe Footer Brand Line (3-tap gesture toggles diagnostic overlay) */}
                 <motion.p
-                  className="mt-4 sm:mt-6 text-[10px] sm:text-[11px] font-mono tracking-wider text-center select-none"
+                  onClick={handleDebugGesture}
+                  className="mt-4 sm:mt-6 text-[10px] sm:text-[11px] font-mono tracking-wider text-center select-none cursor-pointer"
                   animate={{
                     opacity: entranceIndex >= 5 ? 1 : 0,
                   }}
@@ -686,8 +707,8 @@ export default function Home() {
                 >
                   <span className="text-[#4DE8E8]/40">Powered by </span>
                   <span
-                    className="text-[#4DE8E8]/75 hover:text-[#4DE8E8] transition-all duration-300 tracking-widest cursor-default font-semibold inline-block relative group"
-                    title="Stark Industries // Advanced Systems Division"
+                    className="text-[#4DE8E8]/75 hover:text-[#4DE8E8] transition-all duration-300 tracking-widest font-semibold inline-block relative group"
+                    title="Stark Industries // Advanced Systems Division (Tap 3x for Diagnostics)"
                   >
                     Stark Industries
                     <span className="absolute -bottom-0.5 left-0 w-0 h-[1px] bg-[#4DE8E8] transition-all duration-300 group-hover:w-full opacity-70 shadow-[0_0_8px_#4DE8E8]" />
@@ -745,14 +766,16 @@ export default function Home() {
                   />
                 </div>
 
-                {/* HUD Telemetry Bridge */}
+                {/* HUD Telemetry Bridge (3-tap gesture toggles diagnostic overlay) */}
                 <motion.div
+                  onClick={handleDebugGesture}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.5, delay: reducedMotion ? 0 : 0.35, ease: 'easeOut' }}
-                  className={`mt-3 sm:mt-4 flex items-center space-x-2 sm:space-x-3 text-[9px] sm:text-[10px] font-mono tracking-[0.20em] sm:tracking-[0.24em] select-none transition-colors duration-300 ${
+                  className={`mt-3 sm:mt-4 flex items-center space-x-2 sm:space-x-3 text-[9px] sm:text-[10px] font-mono tracking-[0.20em] sm:tracking-[0.24em] select-none transition-colors duration-300 cursor-pointer ${
                     persona === 'friday' ? 'text-amber-300/40' : 'text-[#4DE8E8]/40'
                   }`}
+                  title="Tap 3 times to toggle Mobile Diagnostics HUD"
                 >
                   <div
                     className={`w-10 sm:w-28 h-[1px] bg-gradient-to-r from-transparent to-transparent ${
@@ -811,6 +834,9 @@ export default function Home() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ═══ MOBILE TELEMETRY & DIAGNOSTICS OVERLAY ═══ */}
+      <MobileDebugOverlay forceVisible={debugOverlayVisible} />
     </div>
   );
 }

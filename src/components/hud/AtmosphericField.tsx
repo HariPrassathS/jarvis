@@ -38,10 +38,15 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
-    // Adaptive density: 32 (mobile) vs 95 (desktop) in active mode, 18 vs 45 on landing
-    const isMobile = width < 768;
-    const particleCount = mode === 'active' ? (isMobile ? 32 : 95) : isMobile ? 18 : 45;
-    const shadowBlurAmount = isMobile ? 2 : mode === 'active' ? 5 : 3;
+    // Adaptive density: 16 (mobile) vs 95 (desktop) in active mode, 12 vs 45 on landing
+    const isMobile =
+      width < 768 ||
+      (typeof navigator !== 'undefined' &&
+        (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)));
+    const particleCount = mode === 'active' ? (isMobile ? 16 : 95) : isMobile ? 12 : 45;
+    // On mobile, eliminate canvas shadowBlur (set to 0) to prevent GPU rasterization bottlenecks
+    const shadowBlurAmount = isMobile ? 0 : mode === 'active' ? 5 : 3;
 
     const handleResize = () => {
       if (!canvas) return;
@@ -89,12 +94,16 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
         if (p.x < -10) p.x = width + 10;
         if (p.x > width + 10) p.x = -10;
 
-        // Draw particle with soft glow
+        // Draw particle (clean un-blurred on mobile, soft glow on desktop)
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(${p.color}, ${p.alpha})`;
-        ctx.shadowBlur = shadowBlurAmount;
-        ctx.shadowColor = `rgba(${p.color}, 0.5)`;
+        if (shadowBlurAmount > 0) {
+          ctx.shadowBlur = shadowBlurAmount;
+          ctx.shadowColor = `rgba(${p.color}, 0.5)`;
+        } else {
+          ctx.shadowBlur = 0;
+        }
         ctx.fill();
       }
 

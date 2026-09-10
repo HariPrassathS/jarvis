@@ -11,7 +11,7 @@
 // 6. Integrated Arc Equalizer (16 radial bars in clear 74-98px band, z-20 foreground overlay)
 // ──────────────────────────────────────────────
 
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { JarvisState, VoicePersona } from '@/types';
 import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
@@ -39,9 +39,27 @@ export default function JarvisOrb({
   persona = 'jarvis',
   size = 'md',
 }: JarvisOrbProps) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const checkMobile = () => {
+        const mobile =
+          window.innerWidth < 768 ||
+          /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        setIsMobile(mobile);
+      };
+      checkMobile();
+      window.addEventListener('resize', checkMobile);
+      return () => window.removeEventListener('resize', checkMobile);
+    }
+  }, []);
+
   const { levels: audioLevels, volume } = useAudioVisualizer({
     isActive: state === 'listening' || state === 'speaking',
     barCount: 16,
+    skipHardwareMic: isMobile,
   });
 
   // Effective state taking bootPhase narrative into account
@@ -437,7 +455,7 @@ export default function JarvisOrb({
               dur="6s"
               repeatCount="indefinite"
             />
-            <circle cx="300" cy="200" r="4.5" fill={colorTheme.primary} filter="url(#orbBloom)" />
+            <circle cx="300" cy="200" r="4.5" fill={colorTheme.primary} filter={isMobile ? undefined : 'url(#orbBloom)'} />
             <circle cx="300" cy="200" r="2" fill="#ffffff" />
           </g>
 
@@ -451,7 +469,7 @@ export default function JarvisOrb({
               dur="9s"
               repeatCount="indefinite"
             />
-            <circle cx="150" cy="286.6" r="4" fill={colorTheme.primary} filter="url(#orbBloom)" />
+            <circle cx="150" cy="286.6" r="4" fill={colorTheme.primary} filter={isMobile ? undefined : 'url(#orbBloom)'} />
             <circle cx="150" cy="286.6" r="1.8" fill="#ffffff" />
           </g>
 
@@ -465,7 +483,7 @@ export default function JarvisOrb({
               dur="14s"
               repeatCount="indefinite"
             />
-            <circle cx="150" cy="113.4" r="4" fill={colorTheme.secondary} filter="url(#orbBloom)" />
+            <circle cx="150" cy="113.4" r="4" fill={colorTheme.secondary} filter={isMobile ? undefined : 'url(#orbBloom)'} />
             <circle cx="150" cy="113.4" r="1.8" fill="#ffffff" />
           </g>
         </svg>
@@ -570,10 +588,12 @@ export default function JarvisOrb({
             }}
           />
 
-          {/* Frosted Glass Grain Texture Overlay */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none rounded-full" style={{ opacity: 0.12 }}>
-            <rect width="100%" height="100%" filter="url(#glassGrain)" />
-          </svg>
+          {/* Frosted Glass Grain Texture Overlay (desktop only, omitted on mobile to prevent feTurbulence GPU lag) */}
+          {!isMobile && (
+            <svg className="absolute inset-0 w-full h-full pointer-events-none rounded-full" style={{ opacity: 0.12 }}>
+              <rect width="100%" height="100%" filter="url(#glassGrain)" />
+            </svg>
+          )}
 
           {/* Upper-Left Specular Highlight — Distinct bright crescent reflecting light on curved glass */}
           <div
@@ -632,7 +652,9 @@ export default function JarvisOrb({
                 opacity={bar.opacity}
                 style={{
                   transition: 'all 60ms ease-out',
-                  filter: bar.isPeak
+                  filter: isMobile
+                    ? `drop-shadow(0 0 3px ${bar.isPeak ? '#ffffff' : bar.strokeColor})`
+                    : bar.isPeak
                     ? `drop-shadow(0 0 8px ${bar.strokeColor}) drop-shadow(0 0 3px #ffffff)`
                     : `drop-shadow(0 0 4px ${colorTheme.arcBase})`,
                 }}

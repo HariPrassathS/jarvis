@@ -12,6 +12,7 @@ interface UseAudioVisualizerOptions {
   barCount?: number;
   fftSize?: number;
   smoothingTimeConstant?: number;
+  skipHardwareMic?: boolean;
 }
 
 export interface AudioVisualizerData {
@@ -24,6 +25,7 @@ export function useAudioVisualizer({
   barCount = 16,
   fftSize = 64,
   smoothingTimeConstant = 0.8,
+  skipHardwareMic,
 }: UseAudioVisualizerOptions): AudioVisualizerData {
   const [data, setData] = useState<AudioVisualizerData>(() => ({
     levels: new Array(barCount).fill(0.08),
@@ -40,8 +42,23 @@ export function useAudioVisualizer({
   useEffect(() => {
     let isMounted = true;
 
+    // Detect mobile: mobile OSs enforce exclusive microphone hardware locks (AudioRecord on Android, AVAudioSession on iOS)
+    const isMobileDevice =
+      typeof navigator !== 'undefined' &&
+      (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
+        (typeof window !== 'undefined' && window.innerWidth < 768));
+
+    const shouldSkipHardware = skipHardwareMic ?? isMobileDevice;
+
     async function initAudio() {
       if (!isActive) return;
+
+      // On mobile devices, bypass hardware mic capture to keep the microphone stream
+      // 100% free and uncontested for SpeechRecognition.
+      if (shouldSkipHardware) {
+        return;
+      }
 
       try {
         if (!audioContextRef.current) {
@@ -169,8 +186,12 @@ export function useAudioVisualizer({
       if (animFrameIdRef.current) {
         cancelAnimationFrame(animFrameIdRef.current);
       }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
     };
-  }, [isActive, barCount, fftSize, smoothingTimeConstant]);
+  }, [isActive, barCount, fftSize, smoothingTimeConstant, skipHardwareMic]);
 
   return data;
 }

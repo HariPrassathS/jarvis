@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VoicePersona } from '@/types';
+import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 
 interface UseSpeechSynthesisReturn {
   speak: (text: string, overridePersona?: VoicePersona) => void;
@@ -16,12 +17,27 @@ interface UseSpeechSynthesisReturn {
   activeVoiceName: string | null;
 }
 
+// Regex matching known female voice names to prevent JARVIS from accidentally picking them on iOS/Android
+export const FEMALE_VOICE_REGEX =
+  /female|woman|girl|zira|aria|jenny|sonia|moira|samantha|karen|fiona|victoria|libby|stephanie|serena|martha|tessa|susan|zoe|ava|hazel|en-gb-x-fis/i;
+
 // Ranked priority candidates for JARVIS (male British butler persona)
 const JARVIS_VOICE_CANDIDATES = [
   'Google UK English Male',
-  'Daniel',             // macOS UK male
-  'Arthur',             // macOS UK male
-  'Oliver',             // macOS UK male
+  'Daniel',             // macOS / iOS UK male
+  'Oliver',             // macOS / iOS UK male
+  'Arthur',             // macOS / iOS UK male
+  'Aaron',              // iOS US male
+  'Fred',               // macOS / iOS male
+  'Gordon',             // macOS / iOS Australian male
+  'Rishi',              // macOS / iOS Indian English male
+  'Nicky',              // iOS male
+  'en-gb-x-rjs-local',  // Android Google TTS UK Male
+  'en-gb-x-rjs-network',
+  'en-us-x-sfg-local',  // Android Google TTS US Male
+  'en-us-x-sfg-network',
+  'en-us-x-iog-network',
+  'en-us-x-tpd-network',
   'Microsoft Ryan',     // Windows Natural UK male
   'Microsoft George',   // Windows UK male
   'Microsoft Guy',      // Windows US male
@@ -34,7 +50,7 @@ const JARVIS_VOICE_CANDIDATES = [
 
 // Ranked priority candidates for FRIDAY (female tactical Irish/warm persona)
 const FRIDAY_VOICE_CANDIDATES = [
-  'Moira',              // macOS Irish female (canonical MCU persona)
+  'Moira',              // macOS / iOS Irish female (canonical MCU persona)
   'Google UK English Female',
   'Microsoft Aria',     // Windows Natural US female
   'Microsoft Sonia',    // Windows Natural UK female
@@ -44,6 +60,11 @@ const FRIDAY_VOICE_CANDIDATES = [
   'Karen',              // macOS / iOS Australian female
   'Victoria',           // macOS US female
   'Fiona',              // macOS Scottish female
+  'Tessa',              // iOS South African female
+  'Zoe',                // iOS / macOS female
+  'Ava',                // iOS female
+  'en-ie-x-tfn-local',  // Android Google TTS Irish female
+  'en-gb-x-fis-local',  // Android Google TTS UK female
   'en-IE',              // Any Irish English voice
   'Google Irish',
   'Google English Female',
@@ -110,6 +131,9 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         const availableVoices = window.speechSynthesis.getVoices();
         if (availableVoices && availableVoices.length > 0) {
           voicesRef.current = availableVoices;
+          diagnosticLogger.log('tts', `Loaded ${availableVoices.length} browser voices`, {
+            count: availableVoices.length,
+          });
         }
       } catch (e) {
         console.warn('[TTS] Could not load speech voices:', e);
@@ -118,6 +142,12 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
     loadVoices();
 
+    // Multiple poll attempts for mobile browsers where onvoiceschanged is delayed
+    const t1 = setTimeout(loadVoices, 50);
+    const t2 = setTimeout(loadVoices, 200);
+    const t3 = setTimeout(loadVoices, 600);
+    const t4 = setTimeout(loadVoices, 1500);
+
     // Chrome/Safari often load voices asynchronously; voiceschanged is essential
     if ('onvoiceschanged' in window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = loadVoices;
@@ -125,6 +155,10 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
     window.speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
 
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.removeEventListener?.('voiceschanged', loadVoices);
         window.speechSynthesis.cancel();
@@ -147,52 +181,76 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
       const match = currentVoices.find((v) =>
         v.name.toLowerCase().includes(candidate.toLowerCase())
       );
-      if (match) return match;
+      if (match) {
+        diagnosticLogger.log('tts', `Voice matched candidate "${candidate}": ${match.name}`);
+        return match;
+      }
     }
 
     // 2. Heuristic gender and locale matching
     if (targetPersona === 'friday') {
       // Find English voices with female descriptors
       const femaleEnglish = currentVoices.find(
-        (v) =>
-          v.lang.startsWith('en') &&
-          /female|woman|girl|zira|aria|jenny|sonia|moira|samantha|karen|fiona|victoria|libby/i.test(v.name)
+        (v) => v.lang.startsWith('en') && FEMALE_VOICE_REGEX.test(v.name)
       );
-      if (femaleEnglish) return femaleEnglish;
+      if (femaleEnglish) {
+        diagnosticLogger.log('tts', `Voice matched FRIDAY female regex: ${femaleEnglish.name}`);
+        return femaleEnglish;
+      }
 
       // Irish English fallback
       const irishVoice = currentVoices.find((v) => v.lang.toLowerCase().includes('en-ie'));
-      if (irishVoice) return irishVoice;
+      if (irishVoice) {
+        diagnosticLogger.log('tts', `Voice matched FRIDAY Irish fallback: ${irishVoice.name}`);
+        return irishVoice;
+      }
 
       // Any English voice not labeled male
       const nonMaleEnglish = currentVoices.find(
-        (v) => v.lang.startsWith('en') && !/male|guy|david|george|brian|ryan|paul/i.test(v.name)
+        (v) =>
+          v.lang.startsWith('en') &&
+          !/male|guy|david|george|brian|ryan|paul|daniel|arthur|oliver|aaron|fred/i.test(v.name)
       );
-      if (nonMaleEnglish) return nonMaleEnglish;
+      if (nonMaleEnglish) {
+        diagnosticLogger.log('tts', `Voice matched FRIDAY non-male: ${nonMaleEnglish.name}`);
+        return nonMaleEnglish;
+      }
     } else {
-      // JARVIS: Find English voices with male descriptors or British locale
+      // JARVIS: Find English voices with British locale or male descriptors, strictly rejecting known female names
       const maleBritish = currentVoices.find(
         (v) =>
           (v.lang.toLowerCase().includes('en-gb') || v.lang.toLowerCase().includes('en_uk')) &&
-          !/female|woman|zira|aria|hazel/i.test(v.name)
+          !FEMALE_VOICE_REGEX.test(v.name)
       );
-      if (maleBritish) return maleBritish;
+      if (maleBritish) {
+        diagnosticLogger.log('tts', `Voice matched JARVIS British male: ${maleBritish.name}`);
+        return maleBritish;
+      }
 
       const maleEnglish = currentVoices.find(
         (v) =>
           v.lang.startsWith('en') &&
-          /male|guy|david|george|brian|ryan|paul|daniel|arthur|oliver/i.test(v.name)
+          (/male|guy|david|george|brian|ryan|paul|daniel|arthur|oliver|aaron|fred|gordon|rishi/i.test(v.name) ||
+            /rjs|sfg|iog|tpd/i.test(v.name)) &&
+          !FEMALE_VOICE_REGEX.test(v.name)
       );
-      if (maleEnglish) return maleEnglish;
+      if (maleEnglish) {
+        diagnosticLogger.log('tts', `Voice matched JARVIS English male: ${maleEnglish.name}`);
+        return maleEnglish;
+      }
 
       const nonFemaleEnglish = currentVoices.find(
-        (v) => v.lang.startsWith('en') && !/female|woman|zira|aria|jenny|samantha/i.test(v.name)
+        (v) => v.lang.startsWith('en') && !FEMALE_VOICE_REGEX.test(v.name)
       );
-      if (nonFemaleEnglish) return nonFemaleEnglish;
+      if (nonFemaleEnglish) {
+        diagnosticLogger.log('tts', `Voice matched JARVIS non-female: ${nonFemaleEnglish.name}`);
+        return nonFemaleEnglish;
+      }
     }
 
     // 3. Fallback to default or first available voice
     const defaultVoice = currentVoices.find((v) => v.default) || currentVoices[0];
+    diagnosticLogger.log('tts', `Voice fallback: ${defaultVoice?.name || 'none'}`);
     return defaultVoice || null;
   }, []);
 
@@ -219,27 +277,44 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
         // Persona acoustic profile tuning
         if (effectivePersona === 'friday') {
-          // FRIDAY: slightly higher pitch, warm and bright energy, marginally faster
-          utterance.pitch = 1.08;
+          // FRIDAY: bright, clear, crisp feminine cadence, slightly faster
+          utterance.pitch = 1.12;
           utterance.rate = 1.03;
         } else {
-          // JARVIS: measured, calm, butler-like precision, slightly deeper pitch
-          utterance.pitch = 0.95;
-          utterance.rate = 0.98;
+          // JARVIS: deep, calm, butler-like baritone precision (0.85 pitch ensures male acoustic anchor even on default mobile voices)
+          utterance.pitch = 0.85;
+          utterance.rate = 0.96;
         }
 
         utterance.volume = 1.0;
 
-        utterance.onstart = () => setIsSpeaking(true);
-        utterance.onend = () => setIsSpeaking(false);
+        diagnosticLogger.log('tts', `Speaking as ${effectivePersona.toUpperCase()}`, {
+          voiceName: voice?.name || 'Default',
+          pitch: utterance.pitch,
+          rate: utterance.rate,
+          text: cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned,
+        });
+
+        utterance.onstart = () => {
+          setIsSpeaking(true);
+          diagnosticLogger.log('tts', 'Speech synthesis started');
+        };
+
+        utterance.onend = () => {
+          setIsSpeaking(false);
+          diagnosticLogger.log('tts', 'Speech synthesis finished');
+        };
+
         utterance.onerror = (e) => {
           console.warn('[TTS] Synthesis error:', e);
+          diagnosticLogger.log('tts', `Synthesis error: ${e.error || e}`);
           setIsSpeaking(false);
         };
 
         window.speechSynthesis.speak(utterance);
-      } catch (e) {
+      } catch (e: any) {
         console.warn('[TTS] Speech playback error:', e);
+        diagnosticLogger.log('tts', `Playback exception: ${e?.message || e}`);
         setIsSpeaking(false);
       }
     },
