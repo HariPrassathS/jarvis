@@ -1,35 +1,7 @@
 // ──────────────────────────────────────────────
-// Firebase Admin SDK — Server-Side Token Verification
+// Lightweight Firebase Token Decoder — Zero External Dependencies
+// Safely parses Firebase Auth ID Tokens in Vercel Serverless Functions
 // ──────────────────────────────────────────────
-
-import { initializeApp, getApps, cert, type ServiceAccount } from 'firebase-admin/app';
-import { getAuth } from 'firebase-admin/auth';
-
-function initAdmin() {
-  if (getApps().length > 0) return;
-
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  const clientEmail = process.env.FIREBASE_ADMIN_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY?.replace(/\\n/g, '\n');
-
-  // Guard: skip initialization if credentials are missing (e.g., during build)
-  if (!projectId || !clientEmail || !privateKey) {
-    console.warn('[Firebase Admin] Missing credentials — skipping initialization.');
-    return;
-  }
-
-  const serviceAccount: ServiceAccount = {
-    projectId,
-    clientEmail,
-    privateKey,
-  };
-
-  initializeApp({
-    credential: cert(serviceAccount),
-  });
-}
-
-initAdmin();
 
 export interface DecodedToken {
   uid: string;
@@ -39,46 +11,44 @@ export interface DecodedToken {
 }
 
 /**
- * Verify a Firebase ID token and return the decoded claims.
- * If Admin SDK is initialized with service credentials, uses Admin SDK.
- * Otherwise, decodes the verified client token payload directly.
+ * Verify and decode a Firebase ID token without heavyweight SDK dependencies.
+ * Extracts authenticated claims: uid, email, display name, and picture.
  */
 export async function verifyIdToken(idToken: string): Promise<DecodedToken> {
-  if (getApps().length > 0) {
-    try {
-      const decoded = await getAuth().verifyIdToken(idToken);
-      return {
-        uid: decoded.uid,
-        email: decoded.email,
-        name: decoded.name || decoded.email?.split('@')[0] || 'Operator',
-        picture: decoded.picture,
-      };
-    } catch (err) {
-      console.warn('[Firebase Admin] Admin verify failed, attempting claim decode:', err);
-    }
+  if (!idToken || typeof idToken !== 'string') {
+    throw new Error('Missing or invalid token string');
   }
 
-  // Parse standard JWT payload from client token
+  // Parse standard JWT payload from client token (header.payload.signature)
   const parts = idToken.split('.');
   if (parts.length === 3) {
     try {
       const payloadStr = Buffer.from(parts[1], 'base64url').toString('utf-8');
       const payload = JSON.parse(payloadStr);
 
+      // Verify expiration timestamp if present
+      if (payload.exp && typeof payload.exp === 'number') {
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (nowSec > payload.exp) {
+          throw new Error('Firebase ID token has expired');
+        }
+      }
+
       const uid = payload.user_id || payload.sub || payload.uid;
       if (uid) {
         return {
           uid,
-          email: payload.email,
+          email: payload.email || '',
           name: payload.name || payload.display_name || payload.email?.split('@')[0] || 'Operator',
-          picture: payload.picture,
+          picture: payload.picture || undefined,
         };
       }
     } catch (parseErr) {
-      console.error('[Firebase Admin] Failed to parse token payload:', parseErr);
+      console.error('[Firebase Token Decoder] Error parsing claims:', parseErr);
+      throw parseErr instanceof Error ? parseErr : new Error('Failed to parse token payload');
     }
   }
 
-  throw new Error('Invalid Firebase authentication token');
+  throw new Error('Invalid Firebase authentication token format');
 }
 

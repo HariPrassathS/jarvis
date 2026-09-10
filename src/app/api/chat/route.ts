@@ -76,10 +76,17 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Parse request payload
-    const { messages: clientMessages, conversation_id } = await req.json();
+    let clientMessages: ChatMessage[] = [];
+    let conversationId = '';
+    try {
+      const body = await req.json();
+      clientMessages = body.messages || [];
+      conversationId = body.conversation_id || '';
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+    }
 
     // 4. Resolve conversation ID (generate client-safe UUID if needed)
-    let conversationId = conversation_id;
     if (!conversationId) {
       const cryptoId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `conv-${Date.now()}`;
       conversationId = cryptoId;
@@ -145,11 +152,25 @@ export async function POST(req: NextRequest) {
     ];
 
     // 8. Call LLM Router (Priority: Groq / Gemini)
-    let response = await routeChat({
-      messages: llmMessages,
-      tools: toolDefinitions,
-      preferredProvider,
-    });
+    let response;
+    try {
+      response = await routeChat({
+        messages: llmMessages,
+        tools: toolDefinitions,
+        preferredProvider,
+      });
+    } catch (llmErr) {
+      console.error('[Chat API] LLM Router error:', llmErr);
+      const errMsg = llmErr instanceof Error ? llmErr.message : String(llmErr);
+      
+      // If API keys are missing on Vercel, return a helpful vocal HUD response rather than crashing the client with HTTP 500
+      return NextResponse.json({
+        message:
+          'I apologize, sir. My core neural processing units are currently unconfigured. Please ensure your LLM provider API keys (GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) are added to your Vercel Project Settings under Environment Variables.',
+        provider_used: 'system-diagnostic',
+        conversation_id: conversationId,
+      });
+    }
 
     // 9. Single-Pass Tool Execution (No infinite search loops)
     if (response.tool_calls && response.tool_calls.length > 0) {
@@ -171,11 +192,15 @@ export async function POST(req: NextRequest) {
       }
 
       // Re-invoke LLM with tools: undefined so it immediately synthesizes final response
-      response = await routeChat({
-        messages: llmMessages,
-        tools: undefined, // Crucial: disables tool re-invocations to guarantee instantaneous response
-        preferredProvider,
-      });
+      try {
+        response = await routeChat({
+          messages: llmMessages,
+          tools: undefined, // Crucial: disables tool re-invocations to guarantee instantaneous response
+          preferredProvider,
+        });
+      } catch (toolSynthesisErr) {
+        console.warn('[Chat API] Tool synthesis fallback:', toolSynthesisErr);
+      }
     }
 
     const finalContent =

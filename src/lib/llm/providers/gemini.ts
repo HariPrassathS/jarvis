@@ -9,7 +9,11 @@ import type { ChatMessage, LLMResponse, ToolDefinition } from '@/types';
 let _genAI: GoogleGenerativeAI | null = null;
 function getGenAI(): GoogleGenerativeAI {
   if (!_genAI) {
-    _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error('GEMINI_API_KEY is not configured in environment variables');
+    }
+    _genAI = new GoogleGenerativeAI(key);
   }
   return _genAI;
 }

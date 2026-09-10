@@ -11,8 +11,15 @@ import { createClient } from '@supabase/supabase-js';
  * we've already verified the user's Firebase token.
  */
 export function createServerSupabaseClient() {
-  const supabaseUrl = process.env.SUPABASE_URL!;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const supabaseUrl =
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    'https://owzqnpuyasdpotzaxdfs.supabase.co';
+
+  const supabaseServiceKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93enFucHV5YXNkcG90emF4ZGZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTM1NzIsImV4cCI6MjEwNDUyOTU3Mn0.DvOG53_q30jJ7AxV-bFfmHSscGc_HMzsxm410LD2Xzg';
 
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {

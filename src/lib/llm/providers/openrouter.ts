@@ -17,9 +17,13 @@ import type {
 let _client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!_client) {
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) {
+      throw new Error('OPENROUTER_API_KEY is not configured in environment variables');
+    }
     _client = new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: process.env.OPENROUTER_API_KEY,
+      apiKey: key,
       defaultHeaders: {
         'HTTP-Referer': 'https://jarvis-ai.vercel.app',
         'X-Title': 'JARVIS AI Assistant',

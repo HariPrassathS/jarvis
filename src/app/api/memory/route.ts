@@ -1,6 +1,5 @@
-// ──────────────────────────────────────────────
-// Memory API Route — CRUD for user memories
-// ──────────────────────────────────────────────
+export const dynamic = 'force-dynamic';
+export const maxDuration = 15;
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken } from '@/lib/firebase-admin';

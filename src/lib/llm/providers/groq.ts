@@ -59,7 +59,11 @@ function toGroqMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
 let _client: Groq | null = null;
 function getClient(): Groq {
   if (!_client) {
-    _client = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const key = process.env.GROQ_API_KEY;
+    if (!key) {
+      throw new Error('GROQ_API_KEY is not configured in environment variables');
+    }
+    _client = new Groq({ apiKey: key });
   }
   return _client;
 }
