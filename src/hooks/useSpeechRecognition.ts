@@ -110,6 +110,7 @@ export function useSpeechRecognition(
   const accumulatedTextRef = useRef('');
   const isStartedRef = useRef(false);
   const restartTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const resumeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isTapToTalkRef = useRef(false);
   const rapidAbortCountRef = useRef(0);
 
@@ -202,6 +203,54 @@ export function useSpeechRecognition(
     }
   }, [startEngine, stopEngine]);
 
+  // ── Synchronous TTS Suppression & Post-Speech Acoustic Settling Delay ──
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+
+    if (isSpeaking) {
+      // TTS started: synchronously stop recognition, wipe accumulated text, and cancel any pending timers
+      if (resumeTimerRef.current) {
+        clearTimeout(resumeTimerRef.current);
+        resumeTimerRef.current = null;
+      }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+
+      accumulatedTextRef.current = '';
+      setInterimTranscript('');
+      setIsUserSpeaking(false);
+
+      diagnosticLogger.log('speech', 'TTS speech active -> Synchronously pausing STT engine');
+      stopEngine();
+    } else {
+      // TTS finished or cancelled: apply deliberate settling delay (250ms) to allow mobile speaker acoustic tail to clear
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+
+      resumeTimerRef.current = setTimeout(() => {
+        if (
+          !isMutedRef.current &&
+          !isSpeakingRef.current &&
+          !isTapToTalkRef.current &&
+          typeof document !== 'undefined' &&
+          document.visibilityState === 'visible'
+        ) {
+          diagnosticLogger.log('speech', 'Post-settle STT resume executing (250ms)');
+          startEngine();
+        }
+      }, 250);
+    }
+
+    return () => {
+      if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current);
+    };
+  }, [isSpeaking, startEngine, stopEngine]);
+
   // ── Initialize Web Speech Recognition ──
   useEffect(() => {
     if (!isSupported) {
@@ -252,12 +301,22 @@ export function useSpeechRecognition(
       recognition.onresult = (event: SpeechRecognitionEvent) => {
         if (isMutedRef.current) return;
 
+        // Defensive Layer 1: Synchronously suppress ALL speech accumulation during active TTS playback
         if (isSpeakingRef.current) {
-          console.log('[Always-On Voice] ⚡ User barge-in detected. Interrupting JARVIS.');
-          diagnosticLogger.log('speech', 'User barge-in detected -> Interrupting speech');
+          diagnosticLogger.log('speech', 'Suppressed mic result during active TTS playback');
           if (onBargeInRef.current) {
+            console.log('[Always-On Voice] ⚡ User barge-in detected. Interrupting JARVIS.');
+            diagnosticLogger.log('speech', 'User barge-in detected -> Interrupting speech');
             onBargeInRef.current();
           }
+          accumulatedTextRef.current = '';
+          setInterimTranscript('');
+          setIsUserSpeaking(false);
+          if (silenceTimeoutRef.current) {
+            clearTimeout(silenceTimeoutRef.current);
+            silenceTimeoutRef.current = null;
+          }
+          return;
         }
 
         let finalPart = '';
@@ -346,9 +405,10 @@ export function useSpeechRecognition(
         setIsListening(false);
         diagnosticLogger.log('speech', 'recognition.onend event');
 
-        // Do not auto-restart if muted, in tap-to-talk mode, or tab is hidden
+        // Do not auto-restart if muted, TTS is actively speaking, in tap-to-talk mode, or tab is hidden
         if (
           !isMutedRef.current &&
+          !isSpeakingRef.current &&
           !isTapToTalkRef.current &&
           typeof document !== 'undefined' &&
           document.visibilityState === 'visible'

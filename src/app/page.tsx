@@ -26,10 +26,66 @@ import AtmosphericField from '@/components/hud/AtmosphericField';
 import SignInButton from '@/components/auth/SignInButton';
 import IntelligenceSelection from '@/components/auth/IntelligenceSelection';
 import MobileDebugOverlay from '@/components/debug/MobileDebugOverlay';
+import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import type { JarvisState, VoicePersona } from '@/types';
+
+/**
+ * Circuit-breaker: Checks if recognized user speech is an echo
+ * of JARVIS's own immediately preceding response.
+ */
+function isEchoArtifact(
+  candidateText: string,
+  referenceText: string,
+  elapsedMs: number
+): boolean {
+  if (!candidateText || !referenceText) return false;
+  // If more than 12 seconds have elapsed since JARVIS spoke, it's not an echo
+  if (elapsedMs > 12000) return false;
+
+  const cleanCandidate = candidateText
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const cleanReference = referenceText
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleanCandidate || !cleanReference) return false;
+
+  // 1. Direct substring match (if candidate is a substantial part of assistant response)
+  if (cleanCandidate.length >= 8 && cleanReference.includes(cleanCandidate)) {
+    return true;
+  }
+  if (cleanReference.length >= 8 && cleanCandidate.includes(cleanReference)) {
+    return true;
+  }
+
+  // 2. Token overlap similarity
+  const candWords = cleanCandidate.split(' ').filter((w) => w.length > 2);
+  const refWords = new Set(cleanReference.split(' ').filter((w) => w.length > 2));
+
+  if (candWords.length === 0) return false;
+
+  let matchCount = 0;
+  for (const word of candWords) {
+    if (refWords.has(word)) matchCount++;
+  }
+
+  const overlapRatio = matchCount / candWords.length;
+  // If 75%+ of candidate words match the assistant response and at least 2 words exist
+  if (overlapRatio >= 0.75 && candWords.length >= 2) {
+    return true;
+  }
+
+  return false;
+}
 
 // Characters for the scan-in title animation on initial landing
 const TITLE_CHARS = 'J.A.R.V.I.S'.split('');
@@ -304,13 +360,36 @@ export default function Home() {
     [user]
   );
 
+  const lastAssistantResponseRef = useRef<{ text: string; timestamp: number } | null>(null);
+
   // Voice recognition callback
   const handleSpeechComplete = useCallback(
     (text: string) => {
+      // 1. Hard suppression during active TTS playback
+      if (isSpeaking) {
+        console.warn('[EchoSuppression] 🛑 Dropping speech complete during active TTS playback:', text);
+        diagnosticLogger.log('speech', 'Suppressed speech complete: TTS actively speaking', { text });
+        return;
+      }
+
+      // 2. Circuit breaker against self-echo
+      if (lastAssistantResponseRef.current) {
+        const elapsed = Date.now() - lastAssistantResponseRef.current.timestamp;
+        if (isEchoArtifact(text, lastAssistantResponseRef.current.text, elapsed)) {
+          console.warn('[EchoSuppression] 🛑 Intercepted self-echo artifact. Discarding:', text);
+          diagnosticLogger.log('speech', 'Echo artifact intercepted by circuit breaker', {
+            text,
+            elapsedMs: elapsed,
+            matchedSnippet: lastAssistantResponseRef.current.text.slice(0, 50),
+          });
+          return;
+        }
+      }
+
       stopSpeaking();
       sendMessage(text, persona);
     },
-    [sendMessage, stopSpeaking, persona]
+    [sendMessage, stopSpeaking, persona, isSpeaking]
   );
 
   // Barge-In callback
@@ -372,6 +451,7 @@ export default function Home() {
         ? `Hey there, ${firstName}. All tactical systems are online and listening. What are we working on today?`
         : `Good day, ${firstName}. All systems are online and listening. How may I assist you today?`;
 
+    lastAssistantResponseRef.current = { text: greeting, timestamp: Date.now() };
     setInitialGreeting(greeting);
   }, [
     user,
@@ -403,6 +483,7 @@ export default function Home() {
       lastSpokenIndexRef.current !== lastIdx
     ) {
       lastSpokenIndexRef.current = lastIdx;
+      lastAssistantResponseRef.current = { text: lastMsg.content, timestamp: Date.now() };
       speak(lastMsg.content, persona);
     }
   }, [messages, ttsSupported, speak, persona]);

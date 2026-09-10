@@ -119,6 +119,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const personaRef = useRef<VoicePersona>(persona);
   personaRef.current = persona;
+  const settleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const isSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
@@ -159,6 +160,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
       clearTimeout(t2);
       clearTimeout(t3);
       clearTimeout(t4);
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.removeEventListener?.('voiceschanged', loadVoices);
         window.speechSynthesis.cancel();
@@ -295,19 +297,33 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
           text: cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned,
         });
 
+        if (settleTimerRef.current) {
+          clearTimeout(settleTimerRef.current);
+          settleTimerRef.current = null;
+        }
+
+        // Belt-and-suspenders: Synchronously assert isSpeaking BEFORE speak() is queued
+        setIsSpeaking(true);
+
         utterance.onstart = () => {
           setIsSpeaking(true);
           diagnosticLogger.log('tts', 'Speech synthesis started');
         };
 
         utterance.onend = () => {
-          setIsSpeaking(false);
-          diagnosticLogger.log('tts', 'Speech synthesis finished');
+          // Acoustic settling buffer: keep isSpeaking = true for 200ms after audio playback concludes
+          // to prevent mobile microphone from catching physical room reverb or speaker decay
+          if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+          settleTimerRef.current = setTimeout(() => {
+            setIsSpeaking(false);
+            diagnosticLogger.log('tts', 'Speech synthesis finished (post-settle)');
+          }, 200);
         };
 
         utterance.onerror = (e) => {
           console.warn('[TTS] Synthesis error:', e);
           diagnosticLogger.log('tts', `Synthesis error: ${e.error || e}`);
+          if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
           setIsSpeaking(false);
         };
 
@@ -315,6 +331,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
       } catch (e: any) {
         console.warn('[TTS] Speech playback error:', e);
         diagnosticLogger.log('tts', `Playback exception: ${e?.message || e}`);
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
         setIsSpeaking(false);
       }
     },
@@ -323,12 +340,17 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
   const stop = useCallback(() => {
     if (!isSupported) return;
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
     try {
       window.speechSynthesis.cancel();
     } catch (e) {
       console.warn('[TTS] Speech cancel error:', e);
     }
     setIsSpeaking(false);
+    diagnosticLogger.log('tts', 'Speech synthesis stopped');
   }, [isSupported]);
 
   return {
