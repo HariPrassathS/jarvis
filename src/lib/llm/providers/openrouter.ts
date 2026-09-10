@@ -14,23 +14,68 @@ import type {
   ChatCompletionMessageFunctionToolCall,
 } from 'openai/resources/chat/completions';
 
-let _client: OpenAI | null = null;
-function getClient(): OpenAI {
-  if (!_client) {
-    const key = process.env.OPENROUTER_API_KEY;
-    if (!key) {
-      throw new Error('OPENROUTER_API_KEY is not configured in environment variables');
+// Multi-Key Round-Robin with 429 Cooldown Protection
+const keyCooldowns = new Map<string, number>();
+const clientCache = new Map<string, OpenAI>();
+let currentKeyIndex = 0;
+
+function getAvailableKeys(): string[] {
+  const multi = process.env.OPENROUTER_API_KEYS;
+  let keys: string[] = [];
+  if (multi) {
+    keys = multi.split(',').map((k) => k.trim()).filter(Boolean);
+  }
+  if (keys.length === 0 && process.env.OPENROUTER_API_KEY) {
+    keys = [process.env.OPENROUTER_API_KEY.trim()];
+  }
+  return keys;
+}
+
+function getNextHealthyClient(): { client: OpenAI; key: string } {
+  const keys = getAvailableKeys();
+  if (keys.length === 0) {
+    throw new Error('OPENROUTER_API_KEY is not configured in environment variables');
+  }
+
+  const now = Date.now();
+  for (let i = 0; i < keys.length; i++) {
+    const idx = (currentKeyIndex + i) % keys.length;
+    const candidateKey = keys[idx];
+    const cooldownUntil = keyCooldowns.get(candidateKey) || 0;
+
+    if (now >= cooldownUntil) {
+      currentKeyIndex = (idx + 1) % keys.length;
+      let client = clientCache.get(candidateKey);
+      if (!client) {
+        client = new OpenAI({
+          baseURL: 'https://openrouter.ai/api/v1',
+          apiKey: candidateKey,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://jarvis-ai.vercel.app',
+            'X-Title': 'JARVIS AI Assistant',
+          },
+        });
+        clientCache.set(candidateKey, client);
+      }
+      return { client, key: candidateKey };
     }
-    _client = new OpenAI({
+  }
+
+  currentKeyIndex = (currentKeyIndex + 1) % keys.length;
+  const fallbackKey = keys[0];
+  let client = clientCache.get(fallbackKey);
+  if (!client) {
+    client = new OpenAI({
       baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: key,
+      apiKey: fallbackKey,
       defaultHeaders: {
         'HTTP-Referer': 'https://jarvis-ai.vercel.app',
         'X-Title': 'JARVIS AI Assistant',
       },
     });
+    clientCache.set(fallbackKey, client);
   }
-  return _client;
+  return { client, key: fallbackKey };
 }
 
 // Active Free model on OpenRouter
@@ -96,7 +141,18 @@ export async function callOpenRouter(
     params.tool_choice = 'auto';
   }
 
-  const completion = await getClient().chat.completions.create(params);
+  const { client, key } = getNextHealthyClient();
+
+  let completion;
+  try {
+    completion = await client.chat.completions.create(params);
+  } catch (err: any) {
+    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
+      console.warn(`[OpenRouter Provider] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
+      keyCooldowns.set(key, Date.now() + 60000);
+    }
+    throw err;
+  }
   const choice = completion.choices[0];
 
   // Narrow tool_calls to function tool calls only

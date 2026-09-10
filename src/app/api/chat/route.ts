@@ -15,6 +15,8 @@ import { executeToolCalls } from '@/lib/tools/executor';
 import { recallMemories } from '@/lib/tools/memory';
 import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
+import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
+import { queryCache } from '@/lib/cache/query-cache';
 import type { ChatMessage, VoicePersona } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -168,6 +170,37 @@ export async function POST(req: NextRequest) {
       jarvisCache.set(settingsCacheKey, settingsObj, 600000);
     }
 
+    // 6.5. Per-Operator Rate Limiter (Token Bucket: max 1 request / 3.5s with burst of 2)
+    const rateLimit = operatorRateLimiter.check(profileUid, effectivePersona);
+    if (!rateLimit.allowed) {
+      console.warn(`[Chat API] Operator ${profileUid} throttled. Wait: ${rateLimit.waitSeconds}s`);
+      return NextResponse.json({
+        message: rateLimit.message,
+        provider_used: 'throttle-guard',
+        throttled: true,
+        wait_seconds: rateLimit.waitSeconds,
+        conversation_id: conversationId,
+        voice_persona: effectivePersona,
+      });
+    }
+
+    // 6.6. Zero-Cost Query Response Cache (check repeat / stateless questions)
+    if (lastUserMsg?.content && priorHistory.length === 0) {
+      const cached = queryCache.get(lastUserMsg.content, effectivePersona);
+      if (cached) {
+        console.log(`[Chat API] Query cache HIT for: "${lastUserMsg.content.slice(0, 30)}..."`);
+        return NextResponse.json(
+          {
+            message: cached,
+            provider_used: 'cache-hit',
+            conversation_id: conversationId,
+            voice_persona: effectivePersona,
+          },
+          { headers: { 'X-Cache': 'HIT' } }
+        );
+      }
+    }
+
     // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History + Persona Tone)
     const systemPrompt = buildSystemPrompt(
       profile.display_name,
@@ -182,7 +215,7 @@ export async function POST(req: NextRequest) {
       ...contextualMessages,
     ];
 
-    // 8. Call LLM Router (Priority: Groq / Gemini)
+    // 8. Call LLM Router (Priority: Groq / Gemini / OpenRouter / Cloudflare)
     let response;
     try {
       response = await routeChat({
@@ -193,13 +226,18 @@ export async function POST(req: NextRequest) {
     } catch (llmErr) {
       console.error('[Chat API] LLM Router error:', llmErr);
       
-      // If API keys are missing on Vercel, return a helpful vocal HUD response rather than crashing the client with HTTP 500
+      // In-character auxiliary reserve power response during capacity saturation
+      const reserveMessage =
+        effectivePersona === 'friday'
+          ? "We're on emergency battery, boss. Comms bandwidth is tapped out across all satellite relays. Give me a brief moment to cycle the power grid."
+          : "Operating on auxiliary reserve power, sir. Neural uplinks to primary satellite arrays are temporarily saturated. Core systems remain nominal; please stand by.";
+
       return NextResponse.json({
-        message:
-          'I apologize, sir. My core neural processing units are currently unconfigured. Please ensure your LLM provider API keys (GROQ_API_KEY, GEMINI_API_KEY, or OPENROUTER_API_KEY) are added to your Vercel Project Settings under Environment Variables.',
-        provider_used: 'system-diagnostic',
+        message: reserveMessage,
+        provider_used: 'reserve-auxiliary',
         conversation_id: conversationId,
         voice_persona: effectivePersona,
+        degraded_mode: true,
       });
     }
 
@@ -236,6 +274,11 @@ export async function POST(req: NextRequest) {
 
     const finalContent =
       response.content?.trim() || 'At your service, sir. All systems are operational.';
+
+    // Store in query response cache if eligible
+    if (lastUserMsg?.content && finalContent && priorHistory.length === 0) {
+      queryCache.set(lastUserMsg.content, effectivePersona, finalContent);
+    }
 
     // 10. Asynchronously persist assistant response in background
     Promise.resolve(

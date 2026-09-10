@@ -6,7 +6,7 @@
 export type JarvisState = 'idle' | 'listening' | 'thinking' | 'speaking';
 
 /** LLM provider identifiers */
-export type LLMProvider = 'groq' | 'gemini' | 'openrouter';
+export type LLMProvider = 'groq' | 'gemini' | 'openrouter' | 'cloudflare';
 
 /** Dual voice persona: JARVIS (male butler) or FRIDAY (female tactical) */
 export type VoicePersona = 'jarvis' | 'friday';

@@ -6,16 +6,54 @@
 import { GoogleGenerativeAI, SchemaType, type FunctionDeclaration } from '@google/generative-ai';
 import type { ChatMessage, LLMResponse, ToolDefinition } from '@/types';
 
-let _genAI: GoogleGenerativeAI | null = null;
-function getGenAI(): GoogleGenerativeAI {
-  if (!_genAI) {
-    const key = process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error('GEMINI_API_KEY is not configured in environment variables');
-    }
-    _genAI = new GoogleGenerativeAI(key);
+// Multi-Key Round-Robin with 429 Cooldown Protection
+const keyCooldowns = new Map<string, number>();
+const genAICache = new Map<string, GoogleGenerativeAI>();
+let currentKeyIndex = 0;
+
+function getAvailableKeys(): string[] {
+  const multi = process.env.GEMINI_API_KEYS;
+  let keys: string[] = [];
+  if (multi) {
+    keys = multi.split(',').map((k) => k.trim()).filter(Boolean);
   }
-  return _genAI;
+  if (keys.length === 0 && process.env.GEMINI_API_KEY) {
+    keys = [process.env.GEMINI_API_KEY.trim()];
+  }
+  return keys;
+}
+
+function getNextHealthyGenAI(): { genAI: GoogleGenerativeAI; key: string } {
+  const keys = getAvailableKeys();
+  if (keys.length === 0) {
+    throw new Error('GEMINI_API_KEY is not configured in environment variables');
+  }
+
+  const now = Date.now();
+  for (let i = 0; i < keys.length; i++) {
+    const idx = (currentKeyIndex + i) % keys.length;
+    const candidateKey = keys[idx];
+    const cooldownUntil = keyCooldowns.get(candidateKey) || 0;
+
+    if (now >= cooldownUntil) {
+      currentKeyIndex = (idx + 1) % keys.length;
+      let instance = genAICache.get(candidateKey);
+      if (!instance) {
+        instance = new GoogleGenerativeAI(candidateKey);
+        genAICache.set(candidateKey, instance);
+      }
+      return { genAI: instance, key: candidateKey };
+    }
+  }
+
+  currentKeyIndex = (currentKeyIndex + 1) % keys.length;
+  const fallbackKey = keys[0];
+  let instance = genAICache.get(fallbackKey);
+  if (!instance) {
+    instance = new GoogleGenerativeAI(fallbackKey);
+    genAICache.set(fallbackKey, instance);
+  }
+  return { genAI: instance, key: fallbackKey };
 }
 
 /**
@@ -45,7 +83,7 @@ export async function callGemini(
   messages: ChatMessage[],
   tools?: ToolDefinition[]
 ): Promise<LLMResponse> {
-  const genAI = getGenAI();
+  const { genAI, key } = getNextHealthyGenAI();
   const generationConfig = {
     temperature: 0.7,
     maxOutputTokens: 2048,
@@ -149,7 +187,16 @@ export async function callGemini(
     messageToSend = `Tool Result for ${lastMessage.name || 'query'}: ${lastMessage.content}`;
   }
 
-  const result = await chat.sendMessage(messageToSend);
+  let result;
+  try {
+    result = await chat.sendMessage(messageToSend);
+  } catch (err: any) {
+    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('Resource has been exhausted')) {
+      console.warn(`[Gemini Provider] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
+      keyCooldowns.set(key, Date.now() + 60000);
+    }
+    throw err;
+  }
   const response = result.response;
   const candidate = response.candidates?.[0];
 

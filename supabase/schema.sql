@@ -50,7 +50,19 @@ create table if not exists settings (
   voice_persona text default 'jarvis'
 );
 
+-- provider_usage: global daily request & token budget tracking per LLM provider
+create table if not exists provider_usage (
+  provider text not null,
+  date_utc date not null default current_date,
+  request_count int not null default 0,
+  token_count int not null default 0,
+  last_used_at timestamptz default now(),
+  primary key (provider, date_utc)
+);
+
 -- ── Indexes ────────────────────────────────────
+
+create index if not exists idx_provider_usage_date on provider_usage(date_utc);
 
 create index if not exists idx_profiles_firebase_uid on profiles(firebase_uid);
 create index if not exists idx_conversations_profile_id on conversations(profile_id);

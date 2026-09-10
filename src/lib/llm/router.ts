@@ -6,6 +6,8 @@
 import { callGemini } from './providers/gemini';
 import { callGroq } from './providers/groq';
 import { callOpenRouter } from './providers/openrouter';
+import { callCloudflare } from './providers/cloudflare';
+import { quotaTracker } from '@/lib/quota/tracker';
 import type { ChatMessage, LLMResponse, LLMProvider, ToolDefinition } from '@/types';
 
 interface RouterOptions {
@@ -29,6 +31,7 @@ const PROVIDERS: ProviderEntry[] = [
   { name: 'groq', call: callGroq },
   { name: 'gemini', call: callGemini },
   { name: 'openrouter', call: callOpenRouter },
+  { name: 'cloudflare', call: callCloudflare },
 ];
 
 const DEFAULT_TIMEOUT = 15000; // 15 seconds per provider
@@ -43,12 +46,13 @@ const circuitState: Record<
   gemini: { consecutiveFailures: 0, openUntil: 0 },
   groq: { consecutiveFailures: 0, openUntil: 0 },
   openrouter: { consecutiveFailures: 0, openUntil: 0 },
+  cloudflare: { consecutiveFailures: 0, openUntil: 0 },
 };
 
 export function getCircuitBreakerStatus(): Record<LLMProvider, { status: 'CLOSED' | 'OPEN'; failures: number }> {
   const now = Date.now();
   const res: any = {};
-  for (const p of ['gemini', 'groq', 'openrouter'] as LLMProvider[]) {
+  for (const p of ['gemini', 'groq', 'openrouter', 'cloudflare'] as LLMProvider[]) {
     const s = circuitState[p];
     res[p] = {
       status: s.openUntil > now ? 'OPEN' : 'CLOSED',
@@ -59,7 +63,7 @@ export function getCircuitBreakerStatus(): Record<LLMProvider, { status: 'CLOSED
 }
 
 export function resetCircuitBreaker(): void {
-  for (const p of ['gemini', 'groq', 'openrouter'] as LLMProvider[]) {
+  for (const p of ['gemini', 'groq', 'openrouter', 'cloudflare'] as LLMProvider[]) {
     circuitState[p] = { consecutiveFailures: 0, openUntil: 0 };
   }
 }
@@ -88,14 +92,11 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
   const { messages, tools, preferredProvider, timeoutMs = DEFAULT_TIMEOUT } = options;
 
   let orderedProviders = [...PROVIDERS];
-  if (preferredProvider) {
-    const preferred = orderedProviders.find((p) => p.name === preferredProvider);
-    if (preferred) {
-      orderedProviders = [
-        preferred,
-        ...orderedProviders.filter((p) => p.name !== preferredProvider),
-      ];
-    }
+  // Proactively reorder providers based on 24h quota usage (<80% healthy first, >80% deprioritized last)
+  try {
+    orderedProviders = await quotaTracker.prioritizeProviders(orderedProviders, preferredProvider);
+  } catch (err) {
+    console.warn('[LLM Router] Quota prioritization fallback:', err);
   }
 
   const errors: Array<{ provider: string; error: string }> = [];
@@ -118,6 +119,21 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
       continue;
     }
 
+    // Check if provider has 100% exhausted its daily budget
+    try {
+      const qStatus = await quotaTracker.getStatus(provider.name);
+      if (qStatus.isExhausted) {
+        console.warn(`[LLM Router] Skipping ${provider.name} — 100% daily budget reached (${qStatus.requestsToday}/${qStatus.dailyLimit})`);
+        errors.push({
+          provider: provider.name,
+          error: `Daily budget exhausted (${qStatus.requestsToday}/${qStatus.dailyLimit})`,
+        });
+        continue;
+      }
+    } catch {
+      // Continue if quota check fails
+    }
+
     try {
       const startTime = Date.now();
       console.log(`[LLM Router] Calling provider: ${provider.name}`);
@@ -128,6 +144,9 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
       // Reset circuit breaker on success
       state.consecutiveFailures = 0;
       state.openUntil = 0;
+
+      // Record quota usage asynchronously
+      quotaTracker.recordRequest(provider.name);
 
       console.log(`[LLM Router] Success with provider: ${provider.name} in ${latencyMs}ms`);
       return response;
