@@ -108,12 +108,25 @@ async function callWithTimeout(
 export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
   const { messages, tools, preferredProvider, timeoutMs = DEFAULT_TIMEOUT } = options;
 
+  const hasImageAttachment = messages.some(
+    (m) => m.attachments && m.attachments.some((a) => a.type === 'image')
+  );
+
   let orderedProviders = [...PROVIDERS];
-  // Proactively reorder providers based on 24h quota usage (<80% healthy first, >80% deprioritized last)
-  try {
-    orderedProviders = await quotaTracker.prioritizeProviders(orderedProviders, preferredProvider);
-  } catch (err) {
-    console.warn('[LLM Router] Quota prioritization fallback:', err);
+
+  if (hasImageAttachment) {
+    // Image understanding strictly requires Gemini (multimodal vision support)
+    orderedProviders = orderedProviders.filter((p) => p.name === 'gemini');
+    if (orderedProviders.length === 0) {
+      orderedProviders = [{ name: 'gemini', call: callGemini }];
+    }
+  } else {
+    // Proactively reorder providers based on 24h quota usage (<80% healthy first, >80% deprioritized last)
+    try {
+      orderedProviders = await quotaTracker.prioritizeProviders(orderedProviders, preferredProvider);
+    } catch (err) {
+      console.warn('[LLM Router] Quota prioritization fallback:', err);
+    }
   }
 
   const errors: Array<{ provider: string; error: string }> = [];
@@ -153,7 +166,7 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
 
     try {
       const startTime = Date.now();
-      console.log(`[LLM Router] Calling provider: ${provider.name}`);
+      console.log(`[LLM Router] Calling provider: ${provider.name}${hasImageAttachment ? ' (Vision Mode)' : ''}`);
 
       const response = await callWithTimeout(provider.call, messages, tools, timeoutMs);
       const latencyMs = Date.now() - startTime;
@@ -183,6 +196,14 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
     }
   }
 
+  // Graceful in-character fallback for vision requests when Gemini is saturated
+  if (hasImageAttachment) {
+    return {
+      content: "Visual perception sensors (Gemini Vision Core) are temporarily offline or capacity saturated, sir. I was unable to process the visual telemetry from your uploaded image. Please retry in a few moments.",
+      provider_used: 'gemini',
+    };
+  }
+
   // Fail-safe: If all providers failed because circuit breakers were open, force-try groq once
   if (errors.every((e) => e.error.includes('Circuit breaker OPEN'))) {
     console.warn('[LLM Router] All circuit breakers open — force-resetting Groq fail-safe channel');
@@ -210,21 +231,33 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
 export async function* routeChatStream(options: RouterOptions): AsyncGenerator<StreamChunk, void, unknown> {
   const { messages, tools, preferredProvider } = options;
 
+  const hasImageAttachment = messages.some(
+    (m) => m.attachments && m.attachments.some((a) => a.type === 'image')
+  );
+
   // Build ordered streaming provider list using same quota-aware prioritization
   let orderedProviders = [...STREAMING_PROVIDERS];
-  try {
-    // Use the same priority logic by mapping streaming entries through the quota tracker
-    const blockingEntries = orderedProviders.map((sp) => ({
-      name: sp.name,
-      call: sp.blockingCall || ((() => Promise.resolve({} as LLMResponse)) as ProviderFn),
-    }));
-    const prioritized = await quotaTracker.prioritizeProviders(blockingEntries, preferredProvider);
-    const prioritizedNames = prioritized.map((p) => p.name);
-    orderedProviders = prioritizedNames
-      .map((name) => STREAMING_PROVIDERS.find((sp) => sp.name === name)!)
-      .filter(Boolean);
-  } catch (err) {
-    console.warn('[LLM Router Stream] Quota prioritization fallback:', err);
+
+  if (hasImageAttachment) {
+    // Image understanding strictly requires Gemini (multimodal vision support)
+    orderedProviders = orderedProviders.filter((p) => p.name === 'gemini');
+    if (orderedProviders.length === 0) {
+      orderedProviders = [{ name: 'gemini', stream: streamGemini }];
+    }
+  } else {
+    try {
+      const blockingEntries = orderedProviders.map((sp) => ({
+        name: sp.name,
+        call: sp.blockingCall || ((() => Promise.resolve({} as LLMResponse)) as ProviderFn),
+      }));
+      const prioritized = await quotaTracker.prioritizeProviders(blockingEntries, preferredProvider);
+      const prioritizedNames = prioritized.map((p) => p.name);
+      orderedProviders = prioritizedNames
+        .map((name) => STREAMING_PROVIDERS.find((sp) => sp.name === name)!)
+        .filter(Boolean);
+    } catch (err) {
+      console.warn('[LLM Router Stream] Quota prioritization fallback:', err);
+    }
   }
 
   const errors: Array<{ provider: string; error: string }> = [];
@@ -262,7 +295,7 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
 
     try {
       const startTime = Date.now();
-      console.log(`[LLM Router Stream] Streaming from provider: ${provider.name}`);
+      console.log(`[LLM Router Stream] Starting stream with provider: ${provider.name}${hasImageAttachment ? ' (Vision Mode)' : ''}`);
 
       // Cloudflare doesn't support streaming — use blocking fallback and emit as single chunk
       if (provider.name === 'cloudflare' && provider.blockingCall) {
@@ -326,9 +359,19 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
     }
   }
 
+  // Graceful in-character fallback for vision stream when Gemini is saturated
+  if (hasImageAttachment) {
+    yield {
+      token: "Visual perception sensors (Gemini Vision Core) are temporarily offline or capacity saturated, sir. I was unable to process the visual telemetry from your uploaded image. Please retry in a few moments.",
+    };
+    yield { done: true, provider_used: 'gemini' };
+    return;
+  }
+
   // All streaming providers failed — yield error
   yield {
     error: `All LLM providers failed in streaming chain: ${errors.map((e) => `[${e.provider}] ${e.error}`).join('; ')}`,
     done: true,
   };
 }
+

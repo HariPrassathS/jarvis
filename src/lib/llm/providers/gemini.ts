@@ -79,6 +79,48 @@ function toGeminiFunctionDeclarations(tools: ToolDefinition[]): FunctionDeclarat
   }));
 }
 
+/**
+ * Convert user message and any attachments into Gemini Part objects (supporting image inlineData and documents).
+ */
+function buildGeminiUserParts(message: ChatMessage): Array<Record<string, unknown>> {
+  const parts: Array<Record<string, unknown>> = [];
+
+  // 1. Attachments: Image Data URLs & Extracted Document Text
+  if (message.attachments && message.attachments.length > 0) {
+    for (const att of message.attachments) {
+      if (att.type === 'image' && att.dataUrl) {
+        // Parse data:image/png;base64,...
+        const match = att.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          parts.push({
+            inlineData: {
+              mimeType: match[1],
+              data: match[2],
+            },
+          });
+        }
+      } else if (att.type === 'document' && att.extractedText) {
+        // Include extracted document telemetry
+        const docHeader = `[DOCUMENT ATTACHMENT: "${att.name}" (${att.pageCount ? att.pageCount + ' pages, ' : ''}${Math.round(att.size / 1024)}KB)]`;
+        parts.push({
+          text: `${docHeader}\n${att.extractedText}\n--- END DOCUMENT ---`,
+        });
+      }
+    }
+  }
+
+  // 2. Text message content
+  let text = message.content || '';
+  if (!text && parts.length > 0) {
+    text = 'Please examine this visual/document telemetry and report your analysis, sir.';
+  }
+  if (text) {
+    parts.push({ text });
+  }
+
+  return parts.length > 0 ? parts : [{ text: '' }];
+}
+
 export async function callGemini(
   messages: ChatMessage[],
   tools?: ToolDefinition[]
@@ -136,7 +178,7 @@ export async function callGemini(
     } else {
       history.push({
         role: 'user',
-        parts: [{ text: m.content }],
+        parts: buildGeminiUserParts(m),
       });
     }
   }
@@ -181,15 +223,16 @@ export async function callGemini(
   });
 
   const lastMessage = chatMessages[chatMessages.length - 1];
-  let messageToSend = lastMessage?.content || '';
+  let messagePartsToSend: any = '';
   if (lastMessage?.role === 'tool') {
-    // If last message is a tool response, send function response
-    messageToSend = `Tool Result for ${lastMessage.name || 'query'}: ${lastMessage.content}`;
+    messagePartsToSend = `Tool Result for ${lastMessage.name || 'query'}: ${lastMessage.content}`;
+  } else if (lastMessage) {
+    messagePartsToSend = buildGeminiUserParts(lastMessage);
   }
 
   let result;
   try {
-    result = await chat.sendMessage(messageToSend);
+    result = await chat.sendMessage(messagePartsToSend);
   } catch (err: any) {
     if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('Resource has been exhausted')) {
       console.warn(`[Gemini Provider] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
@@ -302,7 +345,7 @@ export async function* streamGemini(
     } else {
       history.push({
         role: 'user',
-        parts: [{ text: m.content }],
+        parts: buildGeminiUserParts(m),
       });
     }
   }
@@ -347,14 +390,16 @@ export async function* streamGemini(
   });
 
   const lastMessage = chatMessages[chatMessages.length - 1];
-  let messageToSend = lastMessage?.content || '';
+  let messagePartsToSend: any = '';
   if (lastMessage?.role === 'tool') {
-    messageToSend = `Tool Result for ${lastMessage.name || 'query'}: ${lastMessage.content}`;
+    messagePartsToSend = `Tool Result for ${lastMessage.name || 'query'}: ${lastMessage.content}`;
+  } else if (lastMessage) {
+    messagePartsToSend = buildGeminiUserParts(lastMessage);
   }
 
   let streamResult;
   try {
-    streamResult = await chat.sendMessageStream(messageToSend);
+    streamResult = await chat.sendMessageStream(messagePartsToSend);
   } catch (err: any) {
     if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('Resource has been exhausted')) {
       console.warn(`[Gemini Stream] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
@@ -364,6 +409,7 @@ export async function* streamGemini(
   }
 
   let accumulatedText = '';
+
   let toolCallsDetected: StreamChunk['tool_calls'] | undefined;
 
   for await (const chunk of streamResult.stream) {

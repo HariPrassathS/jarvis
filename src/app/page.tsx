@@ -30,7 +30,8 @@ import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
-import type { JarvisState, VoicePersona } from '@/types';
+import { processUploadedFile } from '@/lib/document/extractor';
+import type { JarvisState, VoicePersona, ChatAttachment } from '@/types';
 
 /**
  * Circuit-breaker: Checks if recognized user speech is an echo
@@ -139,6 +140,10 @@ export default function Home() {
   const [entranceStep, setEntranceStep] = useState<LandingEntranceStep>('black');
   const [titleRevealCount, setTitleRevealCount] = useState(0);
   const [customAuthError, setCustomAuthError] = useState<string | null>(null);
+
+  // ── Multi-Modal Drag-and-Drop & File Staging State ──
+  const [isOrbReceiving, setIsOrbReceiving] = useState(false);
+  const [stagedAttachments, setStagedAttachments] = useState<ChatAttachment[]>([]);
 
   // ── Mobile Telemetry Debug Overlay Toggle (3-tap gesture) ──
   const [debugOverlayVisible, setDebugOverlayVisible] = useState(false);
@@ -500,14 +505,68 @@ export default function Home() {
   ]);
 
 
-  // Determine JARVIS state dynamically without effect loops
-  const jarvisState: JarvisState = isSpeaking
+  // Determine JARVIS state dynamically without effect loops (with priority to receiving during file upload/drag)
+  const jarvisState: JarvisState = isOrbReceiving
+    ? 'receiving'
+    : isSpeaking
     ? 'speaking'
     : isLoading
     ? 'thinking'
     : isUserSpeaking || (isListening && !isMuted)
     ? 'listening'
     : 'idle';
+
+  // ── Drag and Drop handlers for central Orb holographic target ──
+  const handleOrbDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsOrbReceiving(true);
+  }, []);
+
+  const handleOrbDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsOrbReceiving(true);
+  }, []);
+
+  const handleOrbDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsOrbReceiving(false);
+  }, []);
+
+  const handleOrbDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = e.dataTransfer.files;
+      if (!files || files.length === 0) {
+        setIsOrbReceiving(false);
+        return;
+      }
+
+      setIsOrbReceiving(true);
+      try {
+        const extracted: ChatAttachment[] = [];
+        for (let i = 0; i < files.length; i++) {
+          const att = await processUploadedFile(files[i]);
+          extracted.push(att);
+        }
+
+        if (extracted.length > 0) {
+          stopSpeaking();
+          setChatExpanded(true); // Automatically expand live transcript so operator observes real-time vision telemetry
+          await sendMessage('', persona, extracted);
+        }
+      } catch (err) {
+        console.error('[Home] Error parsing dropped files on orb:', err);
+      } finally {
+        setIsOrbReceiving(false);
+      }
+    },
+    [sendMessage, persona, stopSpeaking]
+  );
 
   // ── Streaming Sentence-Boundary TTS ──
   // Track which sentences have already been queued during streaming
@@ -591,9 +650,10 @@ export default function Home() {
   }, [messages, ttsSupported, speak, queueSentence, persona, isStreaming]);
 
   const handleSendFromChat = useCallback(
-    (content: string) => {
+    (content: string, attachments?: ChatAttachment[]) => {
       stopSpeaking();
-      sendMessage(content, persona);
+      sendMessage(content, persona, attachments);
+      setStagedAttachments([]);
     },
     [sendMessage, stopSpeaking, persona]
   );
@@ -704,14 +764,18 @@ export default function Home() {
             />
           )}
 
-          {/* ═══ THE CONTINUOUS HOLOGRAPHIC ORB (Never Unmounted) ═══ */}
+          {/* ═══ THE CONTINUOUS HOLOGRAPHIC ORB (Never Unmounted) — Multi-Modal Drag & Drop Target ═══ */}
           <motion.div
             layout="position"
+            onDragOver={handleOrbDragOver}
+            onDragEnter={handleOrbDragEnter}
+            onDragLeave={handleOrbDragLeave}
+            onDrop={handleOrbDrop}
             className={`${
               isSelectionMode
                 ? 'absolute pointer-events-none opacity-0 scale-0 -z-50'
-                : 'relative flex items-center justify-center'
-            }`}
+                : 'relative flex items-center justify-center cursor-pointer group'
+            } ${isOrbReceiving ? 'ring-2 ring-[#4DE8E8]/60 ring-offset-8 ring-offset-black rounded-full' : ''}`}
             initial={false}
             animate={{
               scale: isLandingMode
@@ -722,6 +786,8 @@ export default function Home() {
                   : 0.1
                 : isSelectionMode
                 ? 0
+                : isOrbReceiving
+                ? 1.05
                 : 1,
               y: isLandingMode ? 0 : 0,
               opacity: isLandingMode
@@ -1014,6 +1080,9 @@ export default function Home() {
               isExpanded={chatExpanded}
               onToggle={() => setChatExpanded((prev) => !prev)}
               persona={persona}
+              stagedAttachments={stagedAttachments}
+              onRemoveStagedAttachment={(id) => setStagedAttachments((prev) => prev.filter((a) => a.id !== id))}
+              onAddStagedAttachments={(atts) => setStagedAttachments((prev) => [...prev, ...atts])}
             />
           </motion.div>
         )}

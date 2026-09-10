@@ -3,7 +3,7 @@
 // ──────────────────────────────────────────────
 
 /** Visual state of the JARVIS orb */
-export type JarvisState = 'idle' | 'listening' | 'thinking' | 'speaking';
+export type JarvisState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'receiving';
 
 /** LLM provider identifiers */
 export type LLMProvider = 'groq' | 'gemini' | 'openrouter' | 'cloudflare';
@@ -13,6 +13,18 @@ export type VoicePersona = 'jarvis' | 'friday';
 
 /** Chat message roles */
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
+
+/** Multi-modal attachments (Images, PDFs, Text Documents) */
+export interface ChatAttachment {
+  id: string;
+  type: 'image' | 'document';
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl?: string; // base64 data for images
+  extractedText?: string; // extracted text content for documents
+  pageCount?: number;
+}
 
 // ── Database Models ──────────────────────────
 
@@ -40,6 +52,7 @@ export interface Message {
   content: string;
   provider_used: LLMProvider | null;
   created_at: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface MemoryEntry {
@@ -72,7 +85,9 @@ export interface ChatMessage {
   tool_call_id?: string;
   name?: string;
   tool_calls?: ToolCall[];
+  attachments?: ChatAttachment[];
 }
+
 
 // ── Tool Calling ─────────────────────────────
 

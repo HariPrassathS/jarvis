@@ -106,6 +106,12 @@ export async function POST(req: NextRequest) {
       if (body.google_access_token) {
         googleAccessToken = body.google_access_token;
       }
+      if (Array.isArray(body.attachments) && body.attachments.length > 0 && clientMessages.length > 0) {
+        const last = clientMessages[clientMessages.length - 1];
+        if (!last.attachments) {
+          last.attachments = body.attachments;
+        }
+      }
     } catch {
       return new Response(
         JSON.stringify({ error: 'Invalid JSON payload' }),

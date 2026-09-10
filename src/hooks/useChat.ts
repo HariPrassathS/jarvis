@@ -19,7 +19,7 @@ interface UseChatReturn {
   error: string | null;
   providerUsed: LLMProvider | null;
   conversationId: string | null;
-  sendMessage: (content: string, persona?: VoicePersona) => Promise<void>;
+  sendMessage: (content: string, persona?: VoicePersona, attachments?: import('@/types').ChatAttachment[]) => Promise<void>;
   clearChat: () => void;
   setInitialGreeting: (content: string) => void;
 }
@@ -121,9 +121,11 @@ export function useChat(): UseChatReturn {
   }, [user]);
 
   // ── Send user message with SSE streaming ──
-  const sendMessage = useCallback(async (content: string, persona?: VoicePersona) => {
+  const sendMessage = useCallback(async (content: string, persona?: VoicePersona, attachments?: import('@/types').ChatAttachment[]) => {
     const currentUser = userRef.current;
-    if (!currentUser || !content.trim()) return;
+    const hasAttachments = Boolean(attachments && attachments.length > 0);
+    const trimmed = content.trim();
+    if (!currentUser || (!trimmed && !hasAttachments)) return;
 
     // Cancel any in-flight stream
     if (abortRef.current) {
@@ -132,7 +134,16 @@ export function useChat(): UseChatReturn {
     const abortController = new AbortController();
     abortRef.current = abortController;
 
-    const userMessage: ChatMessage = { role: 'user', content: content.trim() };
+    // Default message text if attachments are provided without explicit prompt
+    const defaultContent = trimmed || (attachments?.some((a) => a.type === 'image')
+      ? 'Please analyze this visual telemetry, sir.'
+      : 'Please examine and summarize this document, sir.');
+
+    const userMessage: ChatMessage = {
+      role: 'user',
+      content: defaultContent,
+      attachments: hasAttachments ? attachments : undefined,
+    };
     const currentMessages = messagesRef.current;
     const updatedMessages = [...currentMessages, userMessage];
 

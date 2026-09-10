@@ -104,6 +104,52 @@ export default function JarvisOrb({
     }
 
     switch (effectiveState) {
+      case 'receiving':
+        return isFriday
+          ? {
+              primary: '#F43F5E',
+              secondary: '#FDA4AF',
+              ambient:
+                'radial-gradient(circle, rgba(244, 63, 94, 0.75) 0%, rgba(225, 29, 72, 0.5) 40%, rgba(244, 63, 94, 0.18) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #9f1239 0%, #4c0519 50%, #1f0208 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#FB7185',
+              plasma2: '#FDA4AF',
+              plasma3: '#FFFFFF',
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(244,63,94,0.1) 8deg, rgba(251,113,133,0.4) 20deg, rgba(244,63,94,0.85) 32deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 22px rgba(244, 63, 94, 0.95))',
+              stateText: '#FDA4AF',
+              arcBase: '#F43F5E',
+              arcPeak: '#FFFFFF',
+              specularColor: 'rgba(255, 255, 255, 1)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 22px rgba(244, 63, 94, 0.75)',
+            }
+          : {
+              primary: '#10B981',
+              secondary: '#6EE7B7',
+              ambient:
+                'radial-gradient(circle, rgba(16, 185, 129, 0.75) 0%, rgba(5, 150, 105, 0.5) 40%, rgba(16, 185, 129, 0.18) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #065f46 0%, #064e3b 50%, #022c22 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#10B981',
+              plasma2: '#34D399',
+              plasma3: '#FFFFFF',
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(16,185,129,0.1) 8deg, rgba(52,211,153,0.4) 20deg, rgba(16,185,129,0.85) 32deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 22px rgba(16, 185, 129, 0.95))',
+              stateText: '#6EE7B7',
+              arcBase: '#10B981',
+              arcPeak: '#FFFFFF',
+              specularColor: 'rgba(255, 255, 255, 1)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 22px rgba(16, 185, 129, 0.75)',
+            };
       case 'thinking':
         return {
           primary: '#F59E0B',
@@ -224,10 +270,12 @@ export default function JarvisOrb({
     }
   }, [effectiveState, bootPhase, isFriday]);
 
-  const voiceScale = 1 + (state === 'listening' || state === 'speaking' ? volume * 0.14 : 0);
+  const voiceScale = 1 + (state === 'listening' || state === 'speaking' || state === 'receiving' ? volume * 0.14 : 0);
 
   const stateLabel =
-    state === 'listening'
+    state === 'receiving'
+      ? 'RECEIVING STREAM...'
+      : state === 'listening'
       ? 'LISTENING...'
       : state === 'thinking'
       ? 'THINKING...'
@@ -241,12 +289,16 @@ export default function JarvisOrb({
   // End radius rEnd extends outward towards r=98px (inner side of ring 3 at r=100)
   // Completely clear of the core, clearly visible, and distinctly hugging the inner arc!
   const arcBars = useMemo(() => {
-    const cx = 200, cy = 200;
-    const rStart = 74; // starts 4px outside core rim
-    const count = audioLevels.length;
+    const cx = 200;
+    const cy = 200;
+    const rStart = 74;
+    const count = 16;
+    const startAngle = 35;
+    const endAngle = 145;
+    const angleStep = (endAngle - startAngle) / (count - 1);
 
     return audioLevels.map((lvl, idx) => {
-      const deg = 35 + (idx / Math.max(1, count - 1)) * 110;
+      const deg = startAngle + idx * angleStep;
       const rad = (deg * Math.PI) / 180;
       // Bar length ranges from 7px base up to 24px on strong input (reaches r=98px)
       const barLen = 7 + lvl * 17;
@@ -273,6 +325,7 @@ export default function JarvisOrb({
     if (bootPhase === 'handshake') return '2s';
     if (bootPhase === 'verifying') return '3s';
     if (bootPhase === 'confirmed') return '1.4s';
+    if (effectiveState === 'receiving') return '1.2s';
     if (isFriday) return effectiveState === 'thinking' ? '2.8s' : '4.8s';
     return effectiveState === 'thinking' ? '3.5s' : '7s';
   }, [bootPhase, effectiveState, isFriday]);
@@ -281,14 +334,16 @@ export default function JarvisOrb({
     if (bootPhase === 'handshake') return '4.5s';
     if (bootPhase === 'verifying') return '8s';
     if (bootPhase === 'confirmed') return '2s';
+    if (effectiveState === 'receiving') return '3.5s';
     if (isFriday) return '16s';
     return '25s';
-  }, [bootPhase, isFriday]);
+  }, [bootPhase, effectiveState, isFriday]);
 
   const ring2Duration = useMemo(() => {
     if (bootPhase === 'handshake') return '2.6s';
     if (bootPhase === 'verifying') return '5s';
     if (bootPhase === 'confirmed') return '1.5s';
+    if (effectiveState === 'receiving') return '2.2s';
     if (isFriday) return effectiveState === 'thinking' ? '5.2s' : '9s';
     return effectiveState === 'thinking' ? '7s' : '14s';
   }, [bootPhase, effectiveState, isFriday]);
