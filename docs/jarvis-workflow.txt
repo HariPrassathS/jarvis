@@ -385,36 +385,37 @@ SECTION 11: DUAL VOICE PERSONA SYSTEM (JARVIS & FRIDAY)
    - Takes effect immediately on the next spoken utterance and LLM prompt.
 
 ================================================================================
-SECTION 12: CAPACITY MANAGEMENT, PER-OPERATOR RATE LIMITING & QUOTA DEFENSE
+SECTION 12: CAPACITY MANAGEMENT & GROQ-PRIMARY ToS-COMPLIANT ARCHITECTURE
 ================================================================================
-1. PER-OPERATOR RATE LIMITING (TOKEN BUCKET):
+1. GROQ-PRIMARY ROUTING PHILOSOPHY:
+   - File: `src/lib/llm/router.ts` & `src/lib/quota/tracker.ts`
+   - Single legitimate Groq account & API key handling all routine conversational traffic.
+   - Preserves uniform sub-second latency (~800ms) and Butler persona consistency.
+   - Gemini, OpenRouter, and Cloudflare are strictly emergency safety nets called ONLY
+     when Groq is down, circuit-broken, or actively rate-limited — never routine load-spreaders.
+   - Legitimate Scaling Path: Groq pay-as-you-go Dev Tier (~$0.05/1M tokens, no minimum spend)
+     removes free-tier rate limits legitimately under one account without account pooling.
+
+2. PER-OPERATOR RATE LIMITING (TOKEN BUCKET):
    - File: `src/lib/ratelimit/token-bucket.ts`
    - Enforces max 1 request per ~3.5 seconds per `firebase_uid` with a burst allowance of 2.
-   - Prevents one chatty user from exhausting shared API quota and locking out other operators.
-   - Generates in-character persona HUD speech rather than raw HTTP 429:
+   - Prevents one chatty user from consuming the shared daily Groq quota and locking out others.
+   - In-character persona HUD speech rather than raw HTTP 429:
      * JARVIS: "Systems recalibrating, sir — please allow X seconds before transmitting your next directive."
      * FRIDAY: "Hold on, boss — cooling thrusters for X seconds. Give me a moment to cycle power."
-   - Returns HTTP 200 with `throttled: true` and `provider_used: 'throttle-guard'` for seamless audio synthesis and transcript clarity.
-
-2. GLOBAL DAILY BUDGET TRACKING & 80% PROACTIVE DEPRIORITIZATION:
-   - File: `src/lib/quota/tracker.ts`
-   - Supabase Table: `provider_usage (provider text, date_utc date, request_count int, token_count int, last_used_at timestamptz)`
-   - Defined daily free-tier limits: Groq (14,400 req/day), Gemini (1,500 req/day), OpenRouter (200 req/day), Cloudflare (10,000 neurons/day).
-   - Rolling 24-hour reset cycle synchronized to UTC midnight.
-   - Proactive deprioritization: when a provider reaches >= 80% of its daily quota, the router shifts it to the tail of the priority chain.
-   - Hard cutoff: when a provider reaches 100% quota, it is marked exhausted and temporarily bypassed.
-   - Admin Quota Endpoint: `GET /api/admin/quota` reports live provider usage %, UTC reset countdown, circuit breakers, and query cache size.
+   - Returns HTTP 200 with `throttled: true` and `provider_used: 'throttle-guard'`.
 
 3. ZERO-COST QUERY RESPONSE CACHE:
    - File: `src/lib/cache/query-cache.ts`
-   - Normalizes query text (strips punctuation, lowercases, collapses whitespace).
+   - Normalizes queries (strips punctuation, lowercases, collapses whitespace).
    - Sub-2ms response time for repeat inquiries and stateless questions with a 10-minute TTL.
-   - Consumes 0 API tokens and 0 provider quota on cache hits (`provider_used: 'cache-hit'`).
+   - Consumes 0 API tokens and 0 Groq quota on cache hits (`provider_used: 'cache-hit'`).
 
-4. MULTI-KEY ROUND-ROBIN ROTATION & FREE-TIER HEADROOM:
-   - Supports comma-separated keys (`GROQ_API_KEYS`, `GEMINI_API_KEYS`, `OPENROUTER_API_KEYS`) with round-robin load distribution.
-   - If an individual key encounters HTTP 429 or quota limit, it cools down for 60 seconds while immediately failing over to the next healthy key.
-   - Added Cloudflare Workers AI free tier (`src/lib/llm/providers/cloudflare.ts`) for 10,000 free daily Neurons.
+4. GLOBAL DAILY BUDGET TRACKING & CAPACITY VISIBILITY:
+   - File: `src/lib/quota/tracker.ts`
+   - Supabase Table: `provider_usage (provider text, date_utc date, request_count int, token_count int, last_used_at timestamptz)`
+   - Rolling 24-hour reset cycle synchronized to UTC midnight.
+   - Admin Quota Endpoint: `GET /api/admin/quota` reports live provider usage %, UTC reset countdown, circuit breakers, and query cache size.
 
 5. AUXILIARY RESERVE DEGRADATION UX:
    - When all providers are genuinely exhausted or network links are disrupted, the system avoids error states.

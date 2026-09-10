@@ -181,46 +181,37 @@ class QuotaTracker {
   }
 
   /**
-   * Dynamically re-order providers:
-   * 1. Preferred provider (if not exhausted and < 80% quota)
-   * 2. Healthy providers (< 80% quota)
-   * 3. Warned providers (80% - 99% quota, moved to tail)
-   * 4. Exhausted providers (100% quota, skipped or placed absolute last)
+   * Dynamically order providers:
+   * Groq-Primary Architecture:
+   * 1. Primary provider (Groq / preferred) always handles traffic first for consistent sub-second latency
+   * 2. Fallback providers (Gemini, OpenRouter, Cloudflare) are reserved as genuine emergency backups
+   * 3. Exhausted providers (100% daily budget reached) are placed at the tail
    */
   async prioritizeProviders<T extends { name: string }>(
     providers: T[],
-    preferred?: string
+    preferred: string = 'groq'
   ): Promise<T[]> {
     const statuses = await this.getAllStatuses();
 
-    const healthy: T[] = [];
-    const warning: T[] = [];
+    const primary: T[] = [];
+    const fallbacks: T[] = [];
     const exhausted: T[] = [];
 
     for (const p of providers) {
       const status = statuses[p.name];
-      if (!status) {
-        healthy.push(p);
-      } else if (status.isExhausted) {
+      const isExhausted = status?.isExhausted || false;
+
+      if (isExhausted) {
         exhausted.push(p);
-      } else if (status.isDeprioritized) {
-        warning.push(p);
+      } else if (p.name === preferred) {
+        primary.push(p);
       } else {
-        healthy.push(p);
+        fallbacks.push(p);
       }
     }
 
-    // Sort healthy with preferred first
-    if (preferred) {
-      const prefIdx = healthy.findIndex((p) => p.name === preferred);
-      if (prefIdx > 0) {
-        const [pref] = healthy.splice(prefIdx, 1);
-        healthy.unshift(pref);
-      }
-    }
-
-    // Concatenate healthy -> warning -> exhausted
-    return [...healthy, ...warning, ...exhausted];
+    // Return: [Primary (Groq), Fallbacks (Gemini, OpenRouter, Cloudflare), Exhausted]
+    return [...primary, ...fallbacks, ...exhausted];
   }
 
   /**
