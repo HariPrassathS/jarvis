@@ -11,11 +11,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import JarvisOrb from '@/components/hud/JarvisOrb';
-import type { VoicePersona } from '@/types';
+import type { VoicePersona, ClearanceLevel } from '@/types';
 
 interface IntelligenceSelectionProps {
   operatorName: string;
   initialPersona?: VoicePersona;
+  clearanceLevel?: ClearanceLevel;
   onSelect: (persona: VoicePersona) => void;
   onPreviewVoice?: (text: string, persona: VoicePersona) => void;
   reducedMotion?: boolean;
@@ -24,6 +25,7 @@ interface IntelligenceSelectionProps {
 export default function IntelligenceSelection({
   operatorName,
   initialPersona = 'jarvis',
+  clearanceLevel = 9,
   onSelect,
   onPreviewVoice,
   reducedMotion = false,
@@ -113,7 +115,7 @@ export default function IntelligenceSelection({
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[#4DE8E8] animate-ping" />
           <span className="text-[8.5px] sm:text-[9.5px] font-mono tracking-[0.22em] text-[#4DE8E8] uppercase font-semibold">
-            STARK INDUSTRIES // OPERATOR: {displayOperator} · LEVEL 9
+            STARK INDUSTRIES // OPERATOR: {displayOperator} · LEVEL {clearanceLevel}{clearanceLevel === 9 ? ' · DIRECT ACCESS' : clearanceLevel === 5 ? ' · TACTICAL' : ' · STANDARD'}
           </span>
         </motion.div>
 

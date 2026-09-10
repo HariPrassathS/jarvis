@@ -1,8 +1,23 @@
 // ──────────────────────────────────────────────
-// Tool Definitions — OpenAI-style function schemas
+// Tool Definitions — OpenAI-style function schemas & Clearance Gating
+// Level 1 (Cadet/Standard): basic search, calc, weather, diagnostics
+// Level 5 (Specialist/Tactical): memory persistence, suit protocols, flight dynamics
+// Level 9 (Executive/Stark Direct): Google calendar manipulation & full protocol suite
 // ──────────────────────────────────────────────
 
-import type { ToolDefinition } from '@/types';
+import type { ToolDefinition, ClearanceLevel } from '@/types';
+
+export const TOOL_CLEARANCE_MAP: Record<string, ClearanceLevel> = {
+  get_weather: 1,
+  calculate: 1,
+  web_search: 1,
+  system_diagnostics: 1,
+  remember: 5,
+  recall_memories: 5,
+  execute_protocol: 5,
+  flight_dynamics: 5,
+  get_calendar_events: 9,
+};
 
 export const toolDefinitions: ToolDefinition[] = [
   {
@@ -77,7 +92,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'remember',
       description:
-        'Store a crucial fact, preference, project code, or specification in long-term memory for future recall across sessions.',
+        'Store a crucial fact, preference, project code, or specification in long-term memory for future recall across sessions. (Requires Clearance Level 5+)',
       parameters: {
         type: 'object',
         properties: {
@@ -100,7 +115,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'recall_memories',
       description:
-        'Explicitly retrieve all stored memories and user facts from the database.',
+        'Explicitly retrieve all stored memories and user facts from the database. (Requires Clearance Level 5+)',
       parameters: {
         type: 'object',
         properties: {},
@@ -113,7 +128,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'execute_protocol',
       description:
-        'Execute Stark Armor Protocols and Armor Telemetry. Supports: "mark_status" (suit telemetry & nanotech reserves), "veronica_satellite" (orbital Hulkbuster deployment), "house_party_protocol" (vault suit standby), "power_redistribution" (shunting power to repulsors/thrusters/shields), "sentry_mode", "stealth_mode", and "clean_slate".',
+        'Execute Stark Armor Protocols and Armor Telemetry. Supports: "mark_status" (suit telemetry & nanotech reserves), "veronica_satellite" (orbital Hulkbuster deployment), "house_party_protocol" (vault suit standby), "power_redistribution" (shunting power to repulsors/thrusters/shields), "sentry_mode", "stealth_mode", and "clean_slate". (Requires Clearance Level 5+)',
       parameters: {
         type: 'object',
         properties: {
@@ -144,7 +159,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'flight_dynamics',
       description:
-        'Perform advanced aerospace and orbital mechanics calculations. Supports: "orbital_velocity", "escape_velocity", "mach_kinetic_energy", "reentry_thermal_load", "thrust_to_weight".',
+        'Perform advanced aerospace and orbital mechanics calculations. Supports: "orbital_velocity", "escape_velocity", "mach_kinetic_energy", "reentry_thermal_load", "thrust_to_weight". (Requires Clearance Level 5+)',
       parameters: {
         type: 'object',
         properties: {
@@ -179,7 +194,7 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'get_calendar_events',
       description:
-        "Retrieve upcoming events, meetings, and schedule items from the operator's Google Calendar. Supports querying today's schedule, tomorrow's schedule, or the upcoming week.",
+        "Retrieve upcoming events, meetings, and schedule items from the operator's Google Calendar. Supports querying today's schedule, tomorrow's schedule, or the upcoming week. (Requires Clearance Level 9)",
       parameters: {
         type: 'object',
         properties: {
@@ -200,4 +215,12 @@ export const toolDefinitions: ToolDefinition[] = [
   },
 ];
 
-
+/**
+ * Filter available tool definitions strictly by operator clearance level.
+ */
+export function getToolsForClearance(clearanceLevel: number = 9): ToolDefinition[] {
+  return toolDefinitions.filter((tool) => {
+    const minClearance = TOOL_CLEARANCE_MAP[tool.function.name] || 1;
+    return clearanceLevel >= minClearance;
+  });
+}

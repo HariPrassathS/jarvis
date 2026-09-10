@@ -12,13 +12,13 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { routeChatStream } from '@/lib/llm/router';
 import { routeChat } from '@/lib/llm/router';
 import { buildSystemPrompt } from '@/lib/llm/system-prompt';
-import { toolDefinitions } from '@/lib/tools/definitions';
+import { toolDefinitions, getToolsForClearance } from '@/lib/tools/definitions';
 import { executeToolCalls } from '@/lib/tools/executor';
 import { recallMemories } from '@/lib/tools/memory';
 import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
-import type { ChatMessage, VoicePersona, StreamChunk } from '@/types';
+import type { ChatMessage, VoicePersona, StreamChunk, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 
     // 2. High-speed cached profile resolution
     const profileCacheKey = `profile:${profileUid}`;
-    let profile = jarvisCache.get<{ id: string; display_name: string; email?: string }>(profileCacheKey);
+    let profile = jarvisCache.get<{ id: string; display_name: string; email?: string; clearance_level?: ClearanceLevel }>(profileCacheKey);
 
     if (!profile) {
       try {
@@ -212,13 +212,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 7. Build system prompt
+    // 6.6. Resolve functional clearance level (1, 5, or 9)
+    const operatorClearance: ClearanceLevel =
+      settingsObj?.clearance_level ||
+      profile?.clearance_level ||
+      9;
+
+    const authorizedTools = getToolsForClearance(operatorClearance);
+
+    // 7. Build system prompt with relationship intelligence
     const systemPrompt = buildSystemPrompt(
       profile.display_name,
       profile.email || profileEmail,
       memories,
       priorHistory,
-      effectivePersona
+      effectivePersona,
+      operatorClearance
     );
 
     const llmMessages: ChatMessage[] = [
@@ -242,7 +251,7 @@ export async function POST(req: NextRequest) {
 
           for await (const chunk of routeChatStream({
             messages: llmMessages,
-            tools: toolDefinitions,
+            tools: authorizedTools,
             preferredProvider,
           })) {
             // Forward token to client
@@ -256,9 +265,10 @@ export async function POST(req: NextRequest) {
               toolCallsReceived = chunk.tool_calls;
               providerUsed = chunk.provider_used || '';
 
-              // Execute tools
+              // Execute tools with clearance context
               const toolResults = await executeToolCalls(chunk.tool_calls, profile.id, {
                 googleAccessToken,
+                clearanceLevel: operatorClearance,
               });
 
 

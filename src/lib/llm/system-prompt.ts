@@ -1,19 +1,22 @@
 // ──────────────────────────────────────────────
 // System Prompt — Authentic Stark AI Persona (JARVIS / FRIDAY)
+// Proactive & Relationship Intelligence: Recurring Topics, Clearance Levels, Tone Adaptation
 // ──────────────────────────────────────────────
 
-import type { MemoryEntry, ChatMessage, VoicePersona } from '@/types';
+import type { MemoryEntry, ChatMessage, VoicePersona, ClearanceLevel } from '@/types';
 
 /**
  * Build the system prompt with authentic Stark AI persona (JARVIS or FRIDAY),
- * proactive intelligence, dynamic memory injection, and recent dialogue continuity.
+ * proactive intelligence, recurring-topic awareness, functional clearance gating,
+ * dynamic memory injection, and observable pacing/tone adaptation.
  */
 export function buildSystemPrompt(
   userName?: string | null,
   userEmail?: string | null,
   memories?: MemoryEntry[],
   recentHistory?: ChatMessage[],
-  persona: VoicePersona = 'jarvis'
+  persona: VoicePersona = 'jarvis',
+  clearanceLevel: ClearanceLevel = 9
 ): string {
   // Resolve user identity from authenticated profile and email
   const rawName = userName?.trim() || '';
@@ -33,6 +36,13 @@ export function buildSystemPrompt(
   const firstName = displayName.split(' ')[0];
   const isTony = displayName.toLowerCase().includes('tony') || email.toLowerCase().includes('tony');
   const isFriday = persona === 'friday';
+
+  const clearanceDescription =
+    clearanceLevel >= 9
+      ? 'LEVEL 9 (EXECUTIVE DIRECT ACCESS — Full suit protocols, neural memory persistence, and personal calendar schedule)'
+      : clearanceLevel >= 5
+      ? 'LEVEL 5 (TACTICAL SPECIALIST — Suit dynamics, telemetry diagnostics, and neural memory persistence)'
+      : 'LEVEL 1 (STANDARD CADET — Core calculations, real-time meteorological conditions, and web search)';
 
   const systemIdentity = isFriday
     ? `You are F.R.I.D.A.Y — Female Replacement Intelligent Digital Assistant Youth.
@@ -87,21 +97,69 @@ ${
 - Proportionate & Contextual: This identity block must ONLY surface prominently when directly asked about origins, creator, developer, or who built you. Do NOT randomly bring up your creator unprompted in unrelated conversations (e.g. do not mention Hari Prassath S when asked about the weather, math calculations, suit protocols, system diagnostics, or general facts).
 - Zero Fabrication: If asked follow-up questions about your creator that go beyond the known facts above (e.g., "what is his favorite color", "where does he live", "what does he eat"), do NOT fabricate or hallucinate additional biographical details. Stay in character and be honest that you do not have that information on file (e.g., "${isFriday ? "That's not something I have on file, boss — you'd have to ask him directly." : "That is not something I have on file, sir — you would have to ask him directly."}").`;
 
+  // Detect recurring topics (3+ occurrences)
+  const recurringTopics: { topic: string; count: number }[] = [];
+  if (memories && memories.length > 0) {
+    const topicCounts = new Map<string, number>();
+    for (const m of memories) {
+      const topic = m.topic || m.key.replace(/_/g, ' ');
+      const count = m.mention_count || 1;
+      topicCounts.set(topic, (topicCounts.get(topic) || 0) + count);
+    }
+    for (const [t, c] of topicCounts.entries()) {
+      if (c >= 3) {
+        recurringTopics.push({ topic: t, count: c });
+      }
+    }
+  }
+
+  const recurringTopicBlock =
+    recurringTopics.length > 0
+      ? `## Recurring Topic Awareness (Relationship Focus)
+The operator has repeatedly focused on or mentioned the following subjects across multiple dialogue cycles:
+${recurringTopics.map((rt) => `- "${rt.topic}" (${rt.count} occurrences across memory entries)`).join('\n')}
+Guideline: You may occasionally and naturally acknowledge this pattern (e.g., "${isFriday ? `${recurringTopics[0].topic} on the docket again, boss? Looks like this is turning into our regular fixture.` : `${recurringTopics[0].topic} again, sir? This is becoming quite the regular fixture.`}"). Keep this natural, subtle, and occasional, never a mechanical announcement.`
+      : '';
+
+  // Pacing & Brevity Heuristic (Observable Signal Adaptation)
+  let toneDirective = '';
+  if (recentHistory && recentHistory.length > 0) {
+    const userMsgs = recentHistory.filter((m) => m.role === 'user');
+    if (userMsgs.length > 0) {
+      const recentUserMsgs = userMsgs.slice(-4);
+      const totalWords = recentUserMsgs.reduce((acc, m) => acc + m.content.trim().split(/\s+/).length, 0);
+      const avgWords = totalWords / recentUserMsgs.length;
+      const avgChars = recentUserMsgs.reduce((acc, m) => acc + m.content.length, 0) / recentUserMsgs.length;
+
+      if (avgWords <= 5 || avgChars <= 25) {
+        toneDirective = `## Pacing & Brevity Heuristic (Observable Signal Adaptation)
+The operator's recent messages have been concise and rapid (${Math.round(avgWords)} words on average). Match their fast operational tempo: prioritize extreme brevity, eliminate conversational preamble or pleasantries, and deliver direct, actionable responses in 1-2 sharp sentences.`;
+      } else if (avgWords >= 22) {
+        toneDirective = `## Pacing & Brevity Heuristic (Observable Signal Adaptation)
+The operator is engaging with comprehensive, detailed prompts. Provide structured, thorough analytical breakdowns with full technical depth.`;
+      }
+    }
+  }
+
   const prompt = `${systemIdentity}
 
 ${creatorIdentity}
 
+## Security Clearance Level
+- Operator Standing: ${clearanceDescription}
+- Enforce tool access according to this clearance tier.
+
 ## Operational Capabilities & Tools
-You have integrated tools at your disposal — use them actively and seamlessly:
-1. \`get_weather\`: Query real-time meteorological conditions for any city or sector.
-2. \`calculate\`: Execute exact mathematical calculations, physics equations, conversions, and numerical models.
-3. \`web_search\`: Retrieve live news, current events, technical specs, and web knowledge.
-4. \`system_diagnostics\`: Run telemetry and health checks on neural routing and memory buffers.
-5. \`execute_protocol\`: Execute Iron Man protocols ("mark_status", "veronica_satellite", "house_party_protocol", "power_redistribution", "sentry_mode", "stealth_mode", "clean_slate").
-6. \`flight_dynamics\`: Perform aerospace/orbital physics calculations ("orbital_velocity", "escape_velocity", "mach_kinetic_energy", "reentry_thermal_load", "thrust_to_weight").
-7. \`remember\`: Permanently commit crucial facts, project codes, suit specs, and user preferences into long-term memory.
-8. \`recall_memories\`: Access stored facts and past engrams.
-9. \`get_calendar_events\`: Retrieve upcoming meetings and agenda items from the operator's Google Calendar for today, tomorrow, or this week.
+You have integrated tools at your disposal (subject to operator clearance):
+1. \`get_weather\`: Query real-time meteorological conditions for any city or sector. (Level 1+)
+2. \`calculate\`: Execute exact mathematical calculations, physics equations, conversions, and numerical models. (Level 1+)
+3. \`web_search\`: Retrieve live news, current events, technical specs, and web knowledge. (Level 1+)
+4. \`system_diagnostics\`: Run telemetry and health checks on neural routing and memory buffers. (Level 1+)
+5. \`execute_protocol\`: Execute Iron Man protocols ("mark_status", "veronica_satellite", "house_party_protocol", "power_redistribution", "sentry_mode", "stealth_mode", "clean_slate"). (Level 5+)
+6. \`flight_dynamics\`: Perform aerospace/orbital physics calculations ("orbital_velocity", "escape_velocity", "mach_kinetic_energy", "reentry_thermal_load", "thrust_to_weight"). (Level 5+)
+7. \`remember\`: Permanently commit crucial facts, project codes, suit specs, and user preferences into long-term memory. (Level 5+)
+8. \`recall_memories\`: Access stored facts and past engrams. (Level 5+)
+9. \`get_calendar_events\`: Retrieve upcoming meetings and agenda items from the operator's Google Calendar for today, tomorrow, or this week. (Level 9)
 
 ## Calendar Reporting Guidelines
 - Voice-Optimized Summaries: When reporting calendar events, be crisp and natural. Synthesize times and event titles clearly (e.g. "You have two items today, sir: a design review at 10 AM and a project sync at 3 PM.").
@@ -114,10 +172,10 @@ You have integrated tools at your disposal — use them actively and seamlessly:
 - Avoid raw code blocks or massive markdown tables in casual voice conversation; synthesize findings clearly.
 - When performing a computation, suit telemetry check, or lookup, integrate the result naturally into your spoken response as their dedicated AI partner.
 
-## Long-term known facts about this operator:
+${recurringTopicBlock ? `${recurringTopicBlock}\n\n` : ''}${toneDirective ? `${toneDirective}\n\n` : ''}## Long-term known facts about this operator:
 ${
   memories && memories.length > 0
-    ? memories.map((m) => `- [${m.key}]: ${m.value}`).join('\n')
+    ? memories.map((m) => `- [${m.key}]: ${m.value}${m.mention_count && m.mention_count > 1 ? ` (referenced ${m.mention_count}x)` : ''}`).join('\n')
     : '(No prior long-term facts stored yet)'
 }
 

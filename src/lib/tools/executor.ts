@@ -1,20 +1,22 @@
 // ──────────────────────────────────────────────
-// Tool Executor — Dispatches tool calls to handlers
+// Tool Executor — Dispatches tool calls to handlers with Clearance Gating
 // ──────────────────────────────────────────────
 
-import type { ToolCall, ToolResult } from '@/types';
+import type { ToolCall, ToolResult, ClearanceLevel } from '@/types';
+import { TOOL_CLEARANCE_MAP } from './definitions';
 import { getWeather } from './weather';
 import { webSearch } from './search';
 import { rememberFact, recallMemories } from './memory';
 import { calculate } from './calculate';
 import { runSystemDiagnostics } from './diagnostics';
 import { executeStarkProtocol, StarkProtocolName } from './protocols';
-import { computeFlightDynamics, FlightDynamicsParams } from './flight';
+import { computeFlightDynamics } from './flight';
 import { getCalendarEvents } from './calendar';
 import { jarvisCache } from '@/lib/llm/cache';
 
 export interface ToolExecutionContext {
   googleAccessToken?: string;
+  clearanceLevel?: ClearanceLevel;
 }
 
 /**
@@ -26,6 +28,18 @@ export async function executeTool(
   context?: ToolExecutionContext
 ): Promise<ToolResult> {
   const { name, arguments: argsStr } = toolCall.function;
+
+  // 1. Security & Clearance Gating Check
+  const requiredLevel = TOOL_CLEARANCE_MAP[name] || 1;
+  const operatorLevel = context?.clearanceLevel ?? 9;
+
+  if (operatorLevel < requiredLevel) {
+    return {
+      tool_call_id: toolCall.id,
+      name,
+      content: `[SECURITY PROTOCOL: ACCESS RESTRICTED. Tool "${name}" requires Clearance Level ${requiredLevel}. Your current standing is Level ${operatorLevel}. Please request operational elevation.]`,
+    };
+  }
 
   let args: Record<string, any> = {};
   try {
@@ -109,7 +123,7 @@ export async function executeTool(
       } else {
         content =
           'Stored memories:\n' +
-          memories.map((m) => `- ${m.key}: ${m.value}`).join('\n');
+          memories.map((m) => `- ${m.key}: ${m.value}${m.mention_count && m.mention_count > 1 ? ` (referenced ${m.mention_count}x)` : ''}`).join('\n');
       }
       break;
     }
@@ -148,4 +162,3 @@ export async function executeToolCalls(
     toolCalls.map((tc) => executeTool(tc, profileId, context))
   );
 }
-

@@ -31,7 +31,7 @@ import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { processUploadedFile } from '@/lib/document/extractor';
-import type { JarvisState, VoicePersona, ChatAttachment } from '@/types';
+import type { JarvisState, VoicePersona, ChatAttachment, ClearanceLevel } from '@/types';
 
 /**
  * Circuit-breaker: Checks if recognized user speech is an echo
@@ -108,6 +108,7 @@ export default function Home() {
 
   // ── Dual Persona State (JARVIS / FRIDAY) with SSR-safe hydration ──
   const [persona, setPersona] = useState<VoicePersona>('jarvis');
+  const [clearanceLevel, setClearanceLevel] = useState<ClearanceLevel>(9);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -334,6 +335,9 @@ export default function Home() {
             if (typeof window !== 'undefined') {
               localStorage.setItem('jarvis_voice_persona', data.settings.voice_persona);
             }
+          }
+          if (data.settings?.clearance_level) {
+            setClearanceLevel(data.settings.clearance_level);
           }
         }
       } catch (e) {
@@ -731,6 +735,7 @@ export default function Home() {
               providerUsed={providerUsed}
               userName={profile?.display_name || user?.displayName || user?.email?.split('@')[0] || 'Operator'}
               persona={persona}
+              clearanceLevel={clearanceLevel || profile?.clearance_level || 9}
               onPersonaChange={handlePersonaChange}
               onNewChat={handleNewChat}
               onSignOut={handleSignOut}
@@ -974,6 +979,7 @@ export default function Home() {
                 key="intelligence-selection-pod"
                 operatorName={firstName}
                 initialPersona={persona}
+                clearanceLevel={clearanceLevel || profile?.clearance_level || 9}
                 onSelect={handleSelectPersona}
                 onPreviewVoice={(text, p) => speak(text, p)}
                 reducedMotion={reducedMotion}

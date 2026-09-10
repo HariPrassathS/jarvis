@@ -10,14 +10,14 @@ import { verifyIdToken } from '@/lib/firebase-admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { routeChat } from '@/lib/llm/router';
 import { buildSystemPrompt } from '@/lib/llm/system-prompt';
-import { toolDefinitions } from '@/lib/tools/definitions';
+import { toolDefinitions, getToolsForClearance } from '@/lib/tools/definitions';
 import { executeToolCalls } from '@/lib/tools/executor';
 import { recallMemories } from '@/lib/tools/memory';
 import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
 import { queryCache } from '@/lib/cache/query-cache';
-import type { ChatMessage, VoicePersona } from '@/types';
+import type { ChatMessage, VoicePersona, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
 
     // 2. High-speed cached profile resolution
     const profileCacheKey = `profile:${profileUid}`;
-    let profile = jarvisCache.get<{ id: string; display_name: string; email?: string }>(profileCacheKey);
+    let profile = jarvisCache.get<{ id: string; display_name: string; email?: string; clearance_level?: ClearanceLevel }>(profileCacheKey);
 
     if (!profile) {
       try {
@@ -219,13 +219,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History + Persona Tone)
+    // 6.7. Resolve functional clearance level (1, 5, or 9)
+    const operatorClearance: ClearanceLevel =
+      settingsObj?.clearance_level ||
+      profile?.clearance_level ||
+      9;
+
+    const authorizedTools = getToolsForClearance(operatorClearance);
+
+    // 7. Prepare messages for LLM (Unconditional Long-Term Facts + Recent Dialogue History + Persona Tone + Clearance)
     const systemPrompt = buildSystemPrompt(
       profile.display_name,
       profile.email || profileEmail,
       memories,
       priorHistory,
-      effectivePersona
+      effectivePersona,
+      operatorClearance
     );
 
     const llmMessages: ChatMessage[] = [
@@ -238,7 +247,7 @@ export async function POST(req: NextRequest) {
     try {
       response = await routeChat({
         messages: llmMessages,
-        tools: toolDefinitions,
+        tools: authorizedTools,
         preferredProvider,
       });
     } catch (llmErr) {
@@ -263,6 +272,7 @@ export async function POST(req: NextRequest) {
     if (response.tool_calls && response.tool_calls.length > 0) {
       const toolResults = await executeToolCalls(response.tool_calls, profile.id, {
         googleAccessToken,
+        clearanceLevel: operatorClearance,
       });
 
 

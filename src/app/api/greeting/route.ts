@@ -1,6 +1,6 @@
 // ──────────────────────────────────────────────
 // Contextual Dynamic Greeting API Route — Real-Time Personalized Boot Salutation
-// Synthesizes greeting from: Time of Day + Recent Dialogue Topic (last 48h) + Calendar Schedule
+// Synthesizes greeting from: Time of Day + Proactive Time-Sensitive Check-ins + Recent Topic + Calendar Schedule
 // ──────────────────────────────────────────────
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken } from '@/lib/firebase-admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { jarvisCache } from '@/lib/llm/cache';
+import { recallMemories, markMemoryFollowedUp } from '@/lib/tools/memory';
 import type { VoicePersona } from '@/types';
 
 interface CalendarSummary {
@@ -89,7 +90,26 @@ export async function GET(req: NextRequest) {
       timeGreetingFriday = 'late night';
     }
 
-    // 4. Fetch Recent Dialogue Context (last 48 hours)
+    // 4. Proactive Fact-Based Check-in (Time-Sensitive Facts, capped at 1 per session)
+    let proactiveFactGreeting: string | null = null;
+    try {
+      const memories = await recallMemories(profileId);
+      const pending = memories.find((m) => m.follow_up_relevant && !m.followed_up);
+      if (pending) {
+        const topic = pending.topic || pending.key.replace(/_/g, ' ');
+        if (isFriday) {
+          proactiveFactGreeting = `Hey ${firstName}! Good ${timeGreetingFriday}. Quick check-in, boss — wasn't the ${topic} on your docket? How did everything go?`;
+        } else {
+          proactiveFactGreeting = `Good ${timeGreetingJarvis}, ${firstName}. If I may inquire, sir — wasn't the ${topic} scheduled recently? How did it go?`;
+        }
+        // Mark as followed up so it surfaces exactly ONCE across sessions
+        await markMemoryFollowedUp(profileId, pending.id);
+      }
+    } catch (memErr) {
+      console.warn('[Greeting API] Proactive memory check warning:', memErr);
+    }
+
+    // 5. Fetch Recent Dialogue Context (last 48 hours)
     let recentTopic: string | null = null;
     try {
       const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
@@ -104,7 +124,6 @@ export async function GET(req: NextRequest) {
         .maybeSingle();
 
       if (latestConv) {
-        // Fetch last user message in this conversation
         const { data: lastMsgs } = await supabase
           .from('messages')
           .select('content, role')
@@ -115,7 +134,6 @@ export async function GET(req: NextRequest) {
 
         if (lastMsgs && lastMsgs.length > 0 && lastMsgs[0].content) {
           const rawContent = lastMsgs[0].content.trim();
-          // Clean up to a readable topic snippet (e.g. max 40 chars, remove trailing punctuation)
           let cleaned = rawContent.replace(/^[!?.,\s]+|[!?.,\s]+$/g, '');
           if (cleaned.length > 45) {
             cleaned = cleaned.slice(0, 42) + '...';
@@ -131,7 +149,7 @@ export async function GET(req: NextRequest) {
       console.warn('[Greeting API] Recent conversation check:', dbErr);
     }
 
-    // 5. Fetch Today's Calendar Event (if token provided)
+    // 6. Fetch Today's Calendar Event (if token provided)
     let todayEvent: CalendarSummary | null = null;
     if (googleAccessToken) {
       try {
@@ -157,7 +175,6 @@ export async function GET(req: NextRequest) {
           const items = Array.isArray(calData.items) ? calData.items : [];
           const active = items.filter((item: any) => item.status !== 'cancelled');
 
-          // Find first event starting now or later today, or earliest today
           if (active.length > 0) {
             const firstEvt = active[0];
             const summary = firstEvt.summary || 'an agenda item';
@@ -180,10 +197,13 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 6. Synthesize Dynamic Greeting
+    // 7. Synthesize Dynamic Greeting
     let greeting = '';
 
-    if (isFriday) {
+    if (proactiveFactGreeting) {
+      // Proactive fact check-in takes prime focus for this single session
+      greeting = proactiveFactGreeting;
+    } else if (isFriday) {
       // ── FRIDAY (Warmer, conversational, energetic) ──
       if (recentTopic && todayEvent) {
         greeting = `Hey ${firstName}! Good ${timeGreetingFriday}. Last we spoke you were looking at "${recentTopic}" — and heads up, you've got ${todayEvent.summary} at ${todayEvent.timeStr} on your calendar.`;
@@ -212,11 +232,11 @@ export async function GET(req: NextRequest) {
       time_of_day: isFriday ? timeGreetingFriday : timeGreetingJarvis,
       recent_topic: recentTopic,
       calendar_event: todayEvent,
+      proactive_fact: Boolean(proactiveFactGreeting),
       persona: personaParam,
     });
   } catch (error: any) {
     console.error('[Greeting API] Error:', error);
-    // Safe fallback
     return NextResponse.json({
       greeting: 'All systems are online and listening. How may I assist you today?',
       fallback: true,

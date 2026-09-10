@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
         preferred_provider: 'groq',
         theme: 'dark-hud',
         voice_persona: 'jarvis',
+        clearance_level: 9,
       };
 
       await supabase.from('settings').upsert(defaultSettings, { onConflict: 'profile_id' });
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
       settings: {
         ...settings,
         voice_persona: (settings.voice_persona as VoicePersona) || 'jarvis',
+        clearance_level: (settings.clearance_level as any) || 9,
       },
     });
   } catch (error) {
@@ -106,7 +108,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
     }
 
-    const { voice_persona, preferred_provider, voice_enabled } = body;
+    const { voice_persona, preferred_provider, voice_enabled, clearance_level } = body;
 
     // Validate persona
     let validatedPersona: VoicePersona | undefined = undefined;
@@ -115,6 +117,16 @@ export async function PATCH(req: NextRequest) {
         validatedPersona = voice_persona;
       } else {
         return NextResponse.json({ error: "Invalid voice_persona. Allowed: 'jarvis' | 'friday'" }, { status: 400 });
+      }
+    }
+
+    // Validate clearance level
+    let validatedClearance: 1 | 5 | 9 | undefined = undefined;
+    if (clearance_level !== undefined) {
+      if (clearance_level === 1 || clearance_level === 5 || clearance_level === 9) {
+        validatedClearance = clearance_level;
+      } else {
+        return NextResponse.json({ error: "Invalid clearance_level. Allowed: 1 | 5 | 9" }, { status: 400 });
       }
     }
 
@@ -139,6 +151,7 @@ export async function PATCH(req: NextRequest) {
     if (validatedPersona !== undefined) updatePayload.voice_persona = validatedPersona;
     if (preferred_provider !== undefined) updatePayload.preferred_provider = preferred_provider;
     if (voice_enabled !== undefined) updatePayload.voice_enabled = voice_enabled;
+    if (validatedClearance !== undefined) updatePayload.clearance_level = validatedClearance;
 
     const { data: updated, error } = await supabase
       .from('settings')
@@ -164,6 +177,7 @@ export async function PATCH(req: NextRequest) {
       settings: {
         ...updated,
         voice_persona: (updated.voice_persona as VoicePersona) || 'jarvis',
+        clearance_level: (updated.clearance_level as any) || 9,
       },
     });
   } catch (error) {

@@ -26,6 +26,8 @@ export interface ChatAttachment {
   pageCount?: number;
 }
 
+export type ClearanceLevel = 1 | 5 | 9;
+
 // ── Database Models ──────────────────────────
 
 export interface UserProfile {
@@ -36,6 +38,7 @@ export interface UserProfile {
   photo_url: string | null;
   created_at: string;
   last_login_at: string;
+  clearance_level?: ClearanceLevel;
 }
 
 export interface Conversation {
@@ -61,6 +64,11 @@ export interface MemoryEntry {
   key: string;
   value: string;
   updated_at: string;
+  follow_up_relevant?: boolean;
+  inferred_date?: string | null;
+  followed_up?: boolean;
+  mention_count?: number;
+  topic?: string;
 }
 
 export interface UserSettings {
@@ -69,6 +77,7 @@ export interface UserSettings {
   preferred_provider: LLMProvider;
   theme: string;
   voice_persona: VoicePersona;
+  clearance_level?: ClearanceLevel;
 }
 
 // ── LLM Router ───────────────────────────────

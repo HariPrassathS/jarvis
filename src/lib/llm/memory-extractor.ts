@@ -1,7 +1,7 @@
 // ──────────────────────────────────────────────
 // Automatic Background Memory Extractor
 // Runs fire-and-forget after every assistant response
-// Extracts durable facts and commits them to Supabase memory
+// Extracts durable facts with proactive time tags and commits them to memory
 // ──────────────────────────────────────────────
 
 import Groq from 'groq-sdk';
@@ -11,10 +11,13 @@ import { rememberFact } from '@/lib/tools/memory';
 export interface ExtractedFact {
   key: string;
   value: string;
+  topic?: string;
+  follow_up_relevant?: boolean;
+  inferred_date?: string | null;
 }
 
 /**
- * Lightweight extraction prompt to isolate durable operator facts
+ * Lightweight extraction prompt to isolate durable operator facts & proactive temporal cues
  * without adding latency to the main conversational response.
  */
 export async function extractAndStoreMemories(
@@ -28,25 +31,28 @@ export async function extractAndStoreMemories(
   // Guard against trivial or empty exchanges
   if (!profileId || !cleanUser || cleanUser.length < 4) return;
 
-  const extractionPrompt = `You are a memory extraction engine for J.A.R.V.I.S.
-Your ONLY job is to extract durable, persistent facts about the user (the operator) from this single conversational exchange that are worth remembering long-term.
+  const extractionPrompt = `You are a memory extraction and relationship intelligence engine for J.A.R.V.I.S.
+Your job is to extract durable, persistent facts about the user (the operator) from this conversational exchange that are worth remembering long-term.
 
 Durable facts include:
 - Ongoing projects, apps, ventures, or robotics (e.g. project name, tech stack, goals)
 - Personal details, profession, job role, skills, interests
+- Time-sensitive events/milestones (e.g. "presenting Friday", "demo tomorrow", "launch next week", "exam on Monday", "meeting with client")
 - Explicit or implicit preferences (e.g. coding conventions, language choices, workflows)
 - Names of collaborators, colleagues, pets, or significant entities mentioned
-- Hardware, servers, or environment details
 
 DO NOT extract:
 - Casual chit-chat, greetings, or pleasantries ("hello", "how are you", "good morning")
-- Ephemeral queries or one-off questions ("what is the weather", "calculate 42*5")
+- Ephemeral queries or one-off calculations ("what is the weather", "calculate 42*5")
 - J.A.R.V.I.S's own capabilities, status, or system remarks
 - Transient states ("I'm tired", "I will be back in 5 minutes")
 
-Return STRICTLY a JSON array of objects with "key" and "value" string properties.
-- "key": short, descriptive snake_case identifier (e.g. "robotics_project_nova", "preferred_language", "pet_dog")
-- "value": clear, concise fact summary (e.g. "Nova (robotics project)", "Works primarily in Rust", "Has a dog named Max")
+Return STRICTLY a JSON array of objects with the following schema:
+- "key": short, descriptive snake_case identifier (e.g. "project_nova_presentation", "preferred_language", "pet_dog")
+- "value": clear, concise fact summary (e.g. "Nova project presentation on Friday", "Works in Rust", "Has a dog named Max")
+- "topic": entity / subject name (e.g. "Nova", "Stark Suit", "Rust", "Presentation")
+- "follow_up_relevant": boolean (true IF this fact is an upcoming event, deadline, presentation, test, demo, or meeting that warrants a proactive check-in; otherwise false)
+- "inferred_date": string or null (e.g. "tomorrow", "Friday", "next week", "2026-09-11", or null if not time-sensitive)
 
 If NO durable facts are found, return STRICTLY: []
 
@@ -64,7 +70,7 @@ J.A.R.V.I.S: "${cleanAssistant.replace(/"/g, '\\"')}"`;
         model: 'openai/gpt-oss-120b',
         messages: [{ role: 'user', content: extractionPrompt }],
         temperature: 0.1,
-        max_tokens: 256,
+        max_tokens: 350,
       });
       responseText = completion.choices[0]?.message?.content || '';
     } catch (groqErr) {
@@ -80,7 +86,7 @@ J.A.R.V.I.S: "${cleanAssistant.replace(/"/g, '\\"')}"`;
         model: 'gemini-2.5-flash',
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 256,
+          maxOutputTokens: 350,
         },
       });
       const result = await model.generateContent(extractionPrompt);
@@ -135,10 +141,14 @@ J.A.R.V.I.S: "${cleanAssistant.replace(/"/g, '\\"')}"`;
 
   console.log(`[MemoryExtractor] Discovered ${facts.length} durable facts:`, facts);
 
-  // Write each extracted fact to Supabase memory (with automatic cache invalidation)
+  // Write each extracted fact to Supabase memory (with automatic cache invalidation and proactive metadata)
   for (const fact of facts) {
     try {
-      await rememberFact(profileId, fact.key.trim(), fact.value.trim());
+      await rememberFact(profileId, fact.key.trim(), fact.value.trim(), {
+        follow_up_relevant: Boolean(fact.follow_up_relevant),
+        inferred_date: fact.inferred_date || null,
+        topic: fact.topic || fact.key.trim(),
+      });
     } catch (err) {
       console.warn(`[MemoryExtractor] Failed to store fact [${fact.key}]:`, err);
     }
