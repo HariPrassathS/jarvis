@@ -227,7 +227,7 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Suggestion Chips & Bottom Input Bar with Expandable Transcript (Entrance delay: ~280ms / 360ms) */}
+      {/* Bottom Input Bar with Expandable Transcript (Entrance delay: ~280ms / 360ms) */}
       <ChatPanel
         messages={messages}
         isLoading={isLoading}

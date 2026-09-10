@@ -1,8 +1,7 @@
 'use client';
 
 // ──────────────────────────────────────────────
-// Chat Panel — Visual Spec: Staggered Suggestion Chips,
-// Rounded-Full Bottom Input Bar & Expandable Transcript Log
+// Chat Panel — Visual Spec: Clean Bottom Input Bar & Expandable Transcript Drawer
 // ──────────────────────────────────────────────
 
 import { useState, useRef, useEffect } from 'react';
@@ -17,13 +16,6 @@ interface ChatPanelProps {
   isExpanded: boolean;
   onToggle: () => void;
 }
-
-// Staggered Suggestion Rows: Row of 2, Row of 2, Row of 1 centered
-const SUGGESTION_ROWS = [
-  ['Mark 85 armor status', 'Weather in Malibu'],
-  ['Calculate kinetic energy at Mach 5', 'Deploy Veronica satellite'],
-  ['System diagnostics check'],
-];
 
 export default function ChatPanel({
   messages,
@@ -48,11 +40,6 @@ export default function ChatPanel({
     if (!input.trim() || isLoading) return;
     onSend(input.trim());
     setInput('');
-  };
-
-  const handleQuickPrompt = (prompt: string) => {
-    if (isLoading) return;
-    onSend(prompt);
   };
 
   return (
@@ -162,60 +149,6 @@ export default function ChatPanel({
         )}
       </AnimatePresence>
 
-      {/* ── Suggestion Chips (Mobile: Horizontal Scroll-Snap Carousel | Desktop: Centered Staggered Rows) ── */}
-      {/* Mobile Horizontal Snap Carousel (≤ 640px) */}
-      <motion.div
-        className="pointer-events-auto sm:hidden w-full max-w-md overflow-x-auto scrollbar-none snap-x snap-mandatory flex items-center gap-2 px-1 mb-2.5 py-1"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.28 }}
-      >
-        {SUGGESTION_ROWS.flat().map((chipLabel, chipIdx) => (
-          <motion.button
-            key={`mob-chip-${chipIdx}`}
-            onClick={() => handleQuickPrompt(chipLabel)}
-            disabled={isLoading}
-            whileTap={{ scale: 0.94 }}
-            className="flex-shrink-0 snap-center min-h-[44px] px-3.5 py-2 rounded-full text-[11px] font-mono uppercase tracking-[0.10em]
-                       bg-black/90 border border-[#4DE8E8]/35 text-[#4DE8E8]/80
-                       active:bg-[#4DE8E8]/25 active:border-[#4DE8E8] active:text-white
-                       disabled:opacity-35 transition-all duration-150 cursor-pointer backdrop-blur-md whitespace-nowrap select-none"
-          >
-            {chipLabel}
-          </motion.button>
-        ))}
-      </motion.div>
-
-      {/* Desktop Suggestion Rows (> 640px) */}
-      <motion.div
-        className="pointer-events-auto hidden sm:flex flex-col items-center gap-2 mb-3 max-w-2xl px-2"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.28 }}
-      >
-        {SUGGESTION_ROWS.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex items-center justify-center gap-2 flex-wrap">
-            {row.map((chipLabel, chipIdx) => (
-              <motion.button
-                key={chipIdx}
-                onClick={() => handleQuickPrompt(chipLabel)}
-                disabled={isLoading}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.96 }}
-                className="px-3.5 py-1.5 rounded-full text-[11px] font-mono uppercase tracking-[0.12em]
-                           bg-black/85 border border-[#4DE8E8]/25 text-[#4DE8E8]/60
-                           hover:bg-[#4DE8E8]/12 hover:border-[#4DE8E8]/75 hover:text-[#4DE8E8]
-                           hover:shadow-[0_0_18px_rgba(77,232,232,0.28)]
-                           active:bg-[#4DE8E8]/30 active:shadow-[0_0_25px_rgba(77,232,232,0.5)]
-                           disabled:opacity-35 transition-all duration-200 cursor-pointer backdrop-blur-md"
-              >
-                {chipLabel}
-              </motion.button>
-            ))}
-          </div>
-        ))}
-      </motion.div>
-
       {/* ── Bottom Input Bar (Fixed to bottom, rounded-full container) ── */}
       <motion.div
         className="pointer-events-auto w-full max-w-3xl"
@@ -238,11 +171,11 @@ export default function ChatPanel({
             aria-label="Toggle live transcript log"
             className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-mono uppercase tracking-wider
                        bg-[#4DE8E8]/10 text-[#4DE8E8]/80 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/20 border border-[#4DE8E8]/30
-                       transition-all cursor-pointer flex-shrink-0 select-none min-h-[38px]"
+                       transition-all cursor-pointer flex-shrink-0 select-none min-h-[38px] whitespace-nowrap"
           >
             <span className="hidden sm:inline">TRANSCRIPT</span>
             <span className="sm:hidden">LOG</span>
-            <span className="w-4 h-4 rounded-full bg-[#4DE8E8] text-black font-bold text-[9px] flex items-center justify-center">
+            <span className="w-4 h-4 rounded-full bg-[#4DE8E8] text-black font-bold text-[9px] flex items-center justify-center flex-shrink-0">
               {messages.length}
             </span>
             <svg
