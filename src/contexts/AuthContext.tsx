@@ -32,6 +32,7 @@ interface AuthContextValue {
   error: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  devSignIn?: (displayName?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -41,6 +42,7 @@ const AuthContext = createContext<AuthContextValue>({
   error: null,
   signIn: async () => {},
   signOut: async () => {},
+  devSignIn: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -167,6 +169,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
+  // Developer / Automated Testing Biometric Sign-in Simulator
+  const devSignIn = useCallback(async (displayName = 'Hari Prassath') => {
+    const devUser = {
+      uid: 'operator-stark-1',
+      email: 'shariprassath@gmail.com',
+      displayName: displayName,
+      photoURL: null,
+      getIdToken: async () => 'dev-token',
+    } as any;
+    setUser(devUser);
+    setProfile({
+      id: 'operator-stark-1',
+      firebase_uid: 'operator-stark-1',
+      email: 'shariprassath@gmail.com',
+      display_name: displayName,
+      photo_url: null,
+      created_at: new Date().toISOString(),
+      last_login_at: new Date().toISOString(),
+    });
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -176,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         error,
         signIn,
         signOut,
+        devSignIn,
       }}
     >
       {children}

@@ -352,5 +352,160 @@ SECTION 10: PHASE 7 — PERSISTENT MEMORY & CONVERSATION CONTINUITY
    - "+ NEW" button in HUD explicitly clears active conversation ID and starts a fresh thread.
 
 ================================================================================
+SECTION 11: DUAL VOICE PERSONA SYSTEM (JARVIS & FRIDAY)
+================================================================================
+1. PERSONA SPECIFICATIONS & ARCHITECTURE:
+   - Male "JARVIS":
+     * Tone & Identity: British formal cadence, calm, dry wit, measured delivery.
+     * Salutation: Addresses operator as "sir" or "boss".
+     * Acoustic Profile: pitch: 0.95, rate: 0.98.
+     * UI Labeling: "J.A.R.V.I.S // CORE v1.0", Avatar [J], cyan accents.
+   - Female "FRIDAY":
+     * Tone & Identity: Agile, tactical coordinator, warmer conversational flow, subtle Irish charm.
+     * Salutation: Addresses operator as "boss" or by first name.
+     * Acoustic Profile: pitch: 1.08, rate: 1.03.
+     * UI Labeling: "F.R.I.D.A.Y // CORE v1.0", Avatar [F], amber/gold highlights.
+
+2. DATABASE SCHEMA & PER-OPERATOR PERSISTENCE:
+   - Supabase `settings` table column: `voice_persona text default 'jarvis'` ('jarvis' | 'friday').
+   - Immediate persistence on switch via `PATCH /api/settings`.
+   - Loaded on session initialization via `GET /api/settings` and cached in `localStorage('jarvis_voice_persona')`.
+
+3. RANKED WEB SPEECH API ENGINE:
+   - File: `src/hooks/useSpeechSynthesis.ts`
+   - Zero external paid TTS dependency; 100% browser-native Web Speech API.
+   - Ranked candidate match lists:
+     * JARVIS: Google UK English Male, Daniel, Arthur, Microsoft Ryan, Microsoft Guy, George, Oliver, en-GB male fallbacks.
+     * FRIDAY: Google UK English Female, Samantha, Microsoft Aria, Microsoft Sonia, Karen, Moira, en-GB/en-IE female fallbacks.
+   - Asynchronous voice list resolution: listens to `window.speechSynthesis.onvoiceschanged` and `voiceschanged` event to solve Chrome's empty-voices initial call.
+   - Gender heuristic substring matching fallback before defaulting to system voice.
+
+4. SEAMLESS REAL-TIME SWITCHING:
+   - Mid-conversation persona switching requires 0 reloads and never crashes the active session.
+   - Takes effect immediately on the next spoken utterance and LLM prompt.
+
+================================================================================
+SECTION 12: CAPACITY MANAGEMENT & GROQ-PRIMARY ToS-COMPLIANT ARCHITECTURE
+================================================================================
+1. GROQ-PRIMARY ROUTING PHILOSOPHY:
+   - File: `src/lib/llm/router.ts` & `src/lib/quota/tracker.ts`
+   - Single legitimate Groq account & API key handling all routine conversational traffic.
+   - Preserves uniform sub-second latency (~800ms) and Butler persona consistency.
+   - Gemini, OpenRouter, and Cloudflare are strictly emergency safety nets called ONLY
+     when Groq is down, circuit-broken, or actively rate-limited — never routine load-spreaders.
+   - Legitimate Scaling Path: Groq pay-as-you-go Dev Tier (~$0.05/1M tokens, no minimum spend)
+     removes free-tier rate limits legitimately under one account without account pooling.
+
+2. PER-OPERATOR RATE LIMITING (TOKEN BUCKET):
+   - File: `src/lib/ratelimit/token-bucket.ts`
+   - Enforces max 1 request per ~3.5 seconds per `firebase_uid` with a burst allowance of 2.
+   - Prevents one chatty user from consuming the shared daily Groq quota and locking out others.
+   - In-character persona HUD speech rather than raw HTTP 429:
+     * JARVIS: "Systems recalibrating, sir — please allow X seconds before transmitting your next directive."
+     * FRIDAY: "Hold on, boss — cooling thrusters for X seconds. Give me a moment to cycle power."
+   - Returns HTTP 200 with `throttled: true` and `provider_used: 'throttle-guard'`.
+
+3. ZERO-COST QUERY RESPONSE CACHE:
+   - File: `src/lib/cache/query-cache.ts`
+   - Normalizes queries (strips punctuation, lowercases, collapses whitespace).
+   - Sub-2ms response time for repeat inquiries and stateless questions with a 10-minute TTL.
+   - Consumes 0 API tokens and 0 Groq quota on cache hits (`provider_used: 'cache-hit'`).
+
+4. GLOBAL DAILY BUDGET TRACKING & CAPACITY VISIBILITY:
+   - File: `src/lib/quota/tracker.ts`
+   - Supabase Table: `provider_usage (provider text, date_utc date, request_count int, token_count int, last_used_at timestamptz)`
+   - Rolling 24-hour reset cycle synchronized to UTC midnight.
+   - Admin Quota Endpoint: `GET /api/admin/quota` reports live provider usage %, UTC reset countdown, circuit breakers, and query cache size.
+
+5. AUXILIARY RESERVE DEGRADATION UX:
+   - When all providers are genuinely exhausted or network links are disrupted, the system avoids error states.
+   - Returns in-persona auxiliary reserve audio:
+     * JARVIS: "Operating on auxiliary reserve power, sir. Neural uplinks to primary satellite arrays are temporarily saturated. Core systems remain nominal; please stand by."
+     * FRIDAY: "We're on emergency battery, boss. Comms bandwidth is tapped out across all channels. Give me a brief moment to cycle the power grid."
+
+================================================================================
+SECTION 11: IN-UNIVERSE BRANDING & PERMANENT CREATOR IDENTITY
+================================================================================
+
+1. COSMETIC FOOTER BRANDING:
+   - File: `src/components/auth/BootSequenceLanding.tsx`
+   - Replaced all visible tech-stack credits ("Powered by Groq · Gemini · OpenRouter") with in-universe brand statement:
+     "Powered by Stark Industries"
+   - Styled with matching muted monospace typography, subtle glowing breathing animation, and interactive hover state with neon cyan (#4DE8E8) highlight, tooltip ("Stark Industries // Advanced Systems Division"), and glowing underline shimmer.
+   - Zero LLM provider names are exposed to end-users in UI, metadata, or diagnostics.
+
+2. IN-UNIVERSE TELEMETRY PURGE:
+   - File: `src/lib/tools/diagnostics.ts`
+   - Removed raw provider mentions (Gemini/Groq/OpenRouter) from the user-facing `system_diagnostics` tool output.
+   - Sanitized to authentic Stark terminology: "Stark Systems Telemetry Report", "Stark Neural Array", "High-Frequency Neural Mesh", and "Quantum Mesh Satellite Uplink".
+
+3. PERMANENT CREATOR IDENTITY IN PROMPTING:
+   - File: `src/lib/llm/system-prompt.ts`
+   - Permanent baseline knowledge injected into `buildSystemPrompt` for every request across both personas (JARVIS and FRIDAY):
+     * Full Name: Hari Prassath S
+     * Role: Sole developer and creator of this entire J.A.R.V.I.S project
+     * Development Style: Vibe coder — builds via rapid, intuitive, AI-assisted iteration
+     * In-Universe Role: Builder and founder of Stark Industries
+     * Additional Ventures: Founder of Quantic Labs
+     * Auth Security: Zero privilege elevation in technical auth system. Purely governs conversational lore and respect.
+
+4. DYNAMIC, NON-ROBOTIC RESPONSE BEHAVIOR:
+   - When asked "who made you", "who created you", "who is your developer", or about origins:
+     * J.A.R.V.I.S: Responds with measured, dignified pride and British refinement addressing "sir".
+     * F.R.I.D.A.Y: Responds with warm, energetic, and snappy tactical pride addressing "boss".
+     * Excluded from static query caching (`src/lib/cache/query-cache.ts`) so every inquiry receives natural, lively variation in phrasing rather than repeating identical sentences.
+
+5. IMMERSION GUARDRAILS:
+   - Unprompted Boundary: The assistant never brings up Hari Prassath S unprompted during unrelated queries (weather, math, physics, protocols).
+================================================================================
+SECTION 12: BIOMETRIC HANDSHAKE & SYSTEM BOOT NARRATIVE
+================================================================================
+
+1. ZERO JUMP-CUT PERSISTENT ORB ARCHITECTURE:
+   - Root Cause of Prior Jump-Cut: `page.tsx` previously returned `<BootSequenceLanding />` conditionally on `!user`. When authentication resolved, React unmounted the landing page DOM tree (including its inner orb) and mounted a separate `<JarvisOrb />` inside the HUD markup.
+   - Solution: Refactored `page.tsx` to host a single, continuous `<JarvisOrb />` instance at the root stage level. The same DOM node and SVG element persist continuously across all 6 phases, animating position and scale purely through CSS and Framer Motion spring physics (`stiffness: 220, damping: 22`).
+
+2. SIX DISTINCT VISUAL PHASES:
+   - Phase 0: Dormant Landing (Entrance Choreography)
+     * On cold visit, the interface boots in: HUD grid fades in, single point of light blooms into the ring system, core sphere resolves, title scans in character-by-character (`J.A.R.V.I.S`), and the biometric button rises in last.
+   - Phase 1: Handshake Initiated (0-800ms)
+     * The moment the user clicks "Sign in with Google", the button morphs into a compact HUD loading state with concentric rotating rings and label: `INITIATING HANDSHAKE...`.
+     * The central orb accelerates noticeably: inner ring speed accelerates from 25s to 4.5s; outer ring from 14s to 2.6s; core brightens.
+   - Phase 2: Verifying Biometric Signature (OAuth & Session Verification)
+     * Title and tagline fade down in opacity to 25%.
+     * Dedicated status line appears beneath the orb: `VERIFYING BIOMETRIC SIGNATURE ...` with an animated pulsing amber dot.
+     * The orb's radar sweep shifts into the amber/gold (`#F59E0B`) palette, matching the system-wide tri-color thinking language.
+   - Phase 3: Identity Confirmed (The Payoff Moment, 300-500ms)
+     * When identity is confirmed, the ring system flashes a quick bright cyan pulse (`#00FFFF`, bloom expansion).
+     * Native Web Audio Stark confirmation chime plays instantly.
+     * Status text swaps to personalized payoff: `✓ IDENTITY CONFIRMED — WELCOME, [FIRST NAME]`.
+   - Phase 4: System Boot (Continuous HUD Hand-off, 800ms-1.2s)
+     * Landing chrome (title, tagline, button) fades and slides down.
+     * The EXACT same centerpiece orb smoothly glides and scales up to HUD center (scale 0.84 -> 1.0).
+     * HUD chrome draws itself in around the orb sequentially: top bar (`OPERATOR // [NAME]`, persona toggle) drops down, status pill rises up, telemetry bridge activates, and bottom chat bar slides in.
+   - Phase 5: Operator Online (Idle Settle & Synchronized Voice Greeting)
+     * App settles into normal idle/listening state.
+     * Initial personalized voice greeting ("Good day, [Name]..." / "Hey there, [Name]...") is timed to start right as Phase 5 begins, synchronizing audio and visual arrival.
+
+3. ZERO-DEPENDENCY NATIVE WEB AUDIO STARK CHIME:
+   - File: `src/lib/audio/stark-chime.ts`
+   - Synthesizes a clean dual-harmonic Stark tone via browser Web Audio API:
+     * 880Hz (A5 fundamental) sine oscillator
+     * 1760Hz (A6 overtone) sine oscillator
+     * 2640Hz high shimmer overtone with exponential decay
+   - 0 external MP3/WAV network dependencies, 0ms latency, zero CORS or 404 risks.
+
+4. ERROR HANDLING & OPERATOR RESILIENCE:
+   - If biometric popup is cancelled or network fails, the system transitions to an in-character HUD state:
+     * User cancelled: "Biometric handshake cancelled by operator."
+     * Network/Auth failure: "Signal lost, sir — let's try that again."
+   - Button transforms into `SIGNAL DISRUPTED — RETRY` with one-click re-initiation.
+
+5. ACCESSIBILITY & REDUCED MOTION:
+   - Listens to system-level `(prefers-reduced-motion: reduce)`.
+   - When enabled, switches spring transforms and heavy rotations to subtle, fast crossfades (200-250ms).
+
+================================================================================
                      END OF WORKFLOW SPECIFICATION
 ================================================================================
+

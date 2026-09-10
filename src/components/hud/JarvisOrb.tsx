@@ -16,20 +16,60 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { JarvisState } from '@/types';
 import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
 
+export type BootNarrativePhase =
+  | 'dormant'
+  | 'handshake'
+  | 'verifying'
+  | 'confirmed'
+  | 'booting'
+  | 'online';
+
 interface JarvisOrbProps {
   state: JarvisState;
   hideLabel?: boolean;
+  bootPhase?: BootNarrativePhase;
 }
 
-export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
+export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProps) {
   const { levels: audioLevels, volume } = useAudioVisualizer({
     isActive: state === 'listening' || state === 'speaking',
     barCount: 16,
   });
 
-  // ── Tri-state color discipline ──
+  // Effective state taking bootPhase narrative into account
+  const effectiveState = useMemo(() => {
+    if (bootPhase === 'verifying') return 'thinking';
+    return state;
+  }, [bootPhase, state]);
+
+  // ── Tri-state color discipline + boot narrative themes ──
   const colorTheme = useMemo(() => {
-    switch (state) {
+    if (bootPhase === 'confirmed') {
+      return {
+        primary: '#00FFFF',
+        secondary: '#4DE8E8',
+        ambient:
+          'radial-gradient(circle, rgba(0, 255, 255, 0.7) 0%, rgba(77, 232, 232, 0.45) 35%, rgba(0, 255, 255, 0.12) 65%, transparent 100%)',
+        coreBase:
+          'radial-gradient(circle at 35% 35%, #0891b2 0%, #0e7490 45%, #083344 80%, #000000 100%)',
+        concaveShadow:
+          'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+        plasma1: '#00FFFF', // Ultra-cyan
+        plasma2: '#38BDF8', // Sky cyan
+        plasma3: '#FFFFFF', // High-lumens pure white
+        radarConic:
+          'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(0,255,255,0.08) 8deg, rgba(77,232,232,0.35) 20deg, rgba(0,255,255,0.75) 32deg, rgba(224,255,255,0.95) 38deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)',
+        glowFilter: 'drop-shadow(0 0 22px rgba(0, 255, 255, 0.95))',
+        stateText: '#00FFFF',
+        arcBase: '#00FFFF',
+        arcPeak: '#FFFFFF',
+        specularColor: 'rgba(255, 255, 255, 1)',
+        innerShadow:
+          'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 24px rgba(0, 255, 255, 0.65)',
+      };
+    }
+
+    switch (effectiveState) {
       case 'thinking':
         return {
           primary: '#F59E0B',
@@ -87,7 +127,7 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
           innerShadow: 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(77, 232, 232, 0.4)',
         };
     }
-  }, [state]);
+  }, [effectiveState, bootPhase]);
 
   const voiceScale = 1 + (state === 'listening' || state === 'speaking' ? volume * 0.14 : 0);
 
@@ -133,6 +173,34 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
   // Plasma churn speed multiplier from voice volume
   const plasmaDriftMul = 1 + volume * 1.2;
 
+  // ── Dynamic boot narrative animation timings ──
+  const radarSweepDuration = useMemo(() => {
+    if (bootPhase === 'handshake') return '2s';
+    if (bootPhase === 'verifying') return '3s';
+    if (bootPhase === 'confirmed') return '1.4s';
+    return effectiveState === 'thinking' ? '3.5s' : '7s';
+  }, [bootPhase, effectiveState]);
+
+  const ring1Duration = useMemo(() => {
+    if (bootPhase === 'handshake') return '4.5s';
+    if (bootPhase === 'verifying') return '8s';
+    if (bootPhase === 'confirmed') return '2s';
+    return '25s';
+  }, [bootPhase]);
+
+  const ring2Duration = useMemo(() => {
+    if (bootPhase === 'handshake') return '2.6s';
+    if (bootPhase === 'verifying') return '5s';
+    if (bootPhase === 'confirmed') return '1.5s';
+    return effectiveState === 'thinking' ? '7s' : '14s';
+  }, [bootPhase, effectiveState]);
+
+  const coreBrightnessFilter = useMemo(() => {
+    if (bootPhase === 'handshake') return 'brightness(1.24) contrast(1.1)';
+    if (bootPhase === 'confirmed') return 'brightness(1.5) drop-shadow(0 0 28px #00ffff)';
+    return 'none';
+  }, [bootPhase]);
+
   return (
     <div className="relative flex flex-col items-center justify-center select-none">
 
@@ -145,12 +213,17 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
           background: colorTheme.ambient,
         }}
         animate={{
-          opacity: state === 'idle' ? [0.22, 0.44, 0.22] : [0.28, 0.55, 0.28],
-          scale: [0.94, 1.10, 0.94],
+          opacity:
+            bootPhase === 'confirmed'
+              ? [0.6, 0.95, 0.6]
+              : state === 'idle'
+              ? [0.22, 0.44, 0.22]
+              : [0.28, 0.55, 0.28],
+          scale: bootPhase === 'confirmed' ? [1, 1.18, 1] : [0.94, 1.10, 0.94],
         }}
         transition={{
-          duration: state === 'thinking' ? 2 : 4.5,
-          repeat: Infinity,
+          duration: bootPhase === 'confirmed' ? 0.6 : state === 'thinking' ? 2 : 4.5,
+          repeat: bootPhase === 'confirmed' ? 1 : Infinity,
           ease: 'easeInOut',
         }}
       />
@@ -158,7 +231,9 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
       {/* ═══ Main Holographic Stage Container (Responsive: 220px to 400px, min 200px) ═══ */}
       <motion.div
         className="relative flex items-center justify-center w-[220px] h-[220px] sm:w-[270px] sm:h-[270px] md:w-[330px] md:h-[330px] lg:w-[400px] lg:h-[400px] min-w-[200px] min-h-[200px]"
-        animate={{ scale: voiceScale }}
+        animate={{
+          scale: bootPhase === 'confirmed' ? voiceScale * 1.06 : voiceScale,
+        }}
         transition={{ type: 'spring', stiffness: 280, damping: 18 }}
       >
 
@@ -172,7 +247,7 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
             /* Scalable percentage mask: transparent inside core (r < 23.5%), visible across ring band (24.5% - 42%), transparent outside (r > 43%) */
             maskImage: 'radial-gradient(circle at center, transparent 23.5%, black 24.5%, black 42%, transparent 43%)',
             WebkitMaskImage: 'radial-gradient(circle at center, transparent 23.5%, black 24.5%, black 42%, transparent 43%)',
-            animationDuration: state === 'thinking' ? '3.5s' : '7s',
+            animationDuration: radarSweepDuration,
           }}
         />
 
@@ -220,7 +295,7 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
             </filter>
           </defs>
 
-          {/* ── RING 1 (OUTERMOST): Solid gradient, r=168, clockwise ~25s ── */}
+          {/* ── RING 1 (OUTERMOST): Solid gradient, r=168, clockwise ── */}
           <circle
             cx="200" cy="200" r="168"
             stroke="url(#ringGrad)"
@@ -229,11 +304,11 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
             style={{
               filter: colorTheme.glowFilter,
               transformOrigin: '200px 200px',
-              animation: 'ring-rotate 25s linear infinite',
+              animation: `ring-rotate ${ring1Duration} linear infinite`,
             }}
           />
 
-          {/* ── RING 2 (MIDDLE): Segmented tick-mark bezel, r=125, counter-clockwise ~14s ── */}
+          {/* ── RING 2 (MIDDLE): Segmented tick-mark bezel, r=125, counter-clockwise ── */}
           <circle
             cx="200" cy="200" r="125"
             stroke={colorTheme.primary}
@@ -242,7 +317,7 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
             strokeDasharray="4 10"
             style={{
               transformOrigin: '200px 200px',
-              animation: `ring-rotate ${state === 'thinking' ? '7s' : '14s'} linear infinite reverse`,
+              animation: `ring-rotate ${ring2Duration} linear infinite reverse`,
             }}
           />
 
@@ -306,8 +381,9 @@ export default function JarvisOrb({ state, hideLabel }: JarvisOrbProps) {
             Deep volumetric ball with concave inner shadow, upper-left specular reflection,
             frosted grain, and 3 high-contrast drifting plasma blobs distinctly visible in stills. */}
         <div
-          className="relative w-[35%] h-[35%] min-w-[72px] min-h-[72px] rounded-full overflow-hidden flex items-center justify-center z-10"
+          className="relative w-[35%] h-[35%] min-w-[72px] min-h-[72px] rounded-full overflow-hidden flex items-center justify-center z-10 transition-[filter] duration-500 ease-out"
           style={{
+            filter: coreBrightnessFilter,
             boxShadow: `
               0 0 35px ${colorTheme.primary}66,
               0 0 70px ${colorTheme.secondary}33,
