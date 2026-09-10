@@ -1,0 +1,332 @@
+================================================================================
+          J.A.R.V.I.S — END-TO-END SYSTEM WORKFLOW & ARCHITECTURE
+================================================================================
+Project: J.A.R.V.I.S (Just A Rather Very Intelligent System)
+Version: 1.0 Production
+Stack: Next.js 16 (Turbopack, App Router) + React 19 + Tailwind CSS + Framer Motion
+       Firebase Authentication + Supabase PostgreSQL (RLS) + Web Speech API (STT/TTS)
+       Multi-LLM Router (Groq + Google Gemini + OpenRouter)
+Target URL: https://jarvis-27.vercel.app
+Repository: https://github.com/HariPrassathS/jarvis
+
+--------------------------------------------------------------------------------
+TABLE OF CONTENTS
+--------------------------------------------------------------------------------
+1. High-Level Architecture & Philosophy
+2. Phase 1: Boot Sequence & Operator Authentication
+3. Phase 2: Always-On Voice & Speech Recognition Engine (VAD + Mobile Fallback)
+4. Phase 3: Holographic HUD, 3D Core Orb & Audio Equalizer Visualizer
+5. Phase 4: Backend API & Multi-LLM Router Orchestration (/api/chat)
+6. Phase 5: Autonomous Tool Execution & Long-Term Memory Storage
+7. Phase 6: Vocal Synthesis (TTS), Text Cleaning & History Persistence
+8. Phase 7: Responsive Mobile Architecture (320px to 4K)
+9. Phase 8: Production Deployment, Environment Variables & Vercel Ops
+
+================================================================================
+1. HIGH-LEVEL ARCHITECTURE & PHILOSOPHY
+================================================================================
+J.A.R.V.I.S is designed as a real-time, voice-first, holographic personal AI
+assistant inspired by Tony Stark's iconic AI.
+
+The core philosophy:
+- Zero manual mic toggling: Continuous ambient listening with automatic Voice
+  Activity Detection (VAD) and hands-free conversational flow.
+- Zero operating cost ($0): Operates 100% on free-tier APIs and infrastructure
+  without requiring subscriptions or credit cards.
+- Multi-provider resilience: If any LLM provider fails, times out, or hits rate
+  limits, J.A.R.V.I.S automatically switches providers in milliseconds via a
+  circuit breaker pattern.
+- Persistent Operator Persona: Remembers who you are across sessions and
+  customizes its vocal address and intelligence based on your verified identity.
+
+System Flow Diagram:
+[ User Speaks / Types ]
+        │
+        ▼
+[ Web Speech STT / AudioSentry ] ──── (800ms silence VAD turn detector)
+        │
+        ▼
+[ Client /api/chat Request ] ──────── (Bearer Firebase ID Token)
+        │
+        ▼
+[ Server Token Verification ] ─────── (Zero-dependency JWT claim decoder)
+        │
+        ├────────────────────────────► [ Supabase DB: Profile & Memory Recall ]
+        │
+        ▼
+[ System Prompt Synthesis ] ───────── (Dynamic Operator Identity + Active Memories)
+        │
+        ▼
+[ Multi-LLM Router Chain ] ────────── [ Priority 1: Groq (gpt-oss-120b) ]
+        │                                      │ (Fail / Rate-Limit)
+        │                                      ▼
+        │                             [ Priority 2: Gemini (2.5-flash) ]
+        │                                      │ (Fail / Rate-Limit)
+        │                                      ▼
+        │                             [ Priority 3: OpenRouter (nex-n2.5-pro) ]
+        │
+        ▼
+[ Tool Call Evaluator ] ─────────────► [ Weather / Search / Math / Protocols / Memory ]
+        │                                      │
+        │ ◄────────────────────────────────────┘ (Tool results returned)
+        ▼
+[ LLM Final Synthesis ] ─────────────► [ Clean Vocal Sanitization ]
+        │
+        ├────────────────────────────► [ Async Supabase Persistence (Messages/Convs) ]
+        │
+        ▼
+[ Client Vocal Response (TTS) ] ─────► [ 16-Bar Radial Equalizer Animation ]
+
+================================================================================
+2. PHASE 1: BOOT SEQUENCE & OPERATOR AUTHENTICATION
+================================================================================
+Step 1.1: Cinematic 5-Phase System Boot Animation
+When an unauthenticated user or new visitor loads the web app, a choreographed
+sci-fi power-up sequence plays:
+  - 0ms: Viewport is pure black (#000000) with faint cyan gridlines (40-60px).
+  - 250ms: A single central cyan optical point of light blooms into existence.
+  - 650ms: The outer ring system draws itself on, rotating clockwise and
+    counter-clockwise like a HUD coming online.
+  - 1150ms: The volumetric core sphere resolves into 3D glass with internal
+    plasma layers (cyan, magenta, and white-gold).
+  - 1650ms: "J.A.R.V.I.S" title scans in character-by-character with an optical bloom.
+  - 2250ms: Subtitle, status indicator, and "[ INITIALIZE SESSION ]" CTA button
+    rise into place.
+
+Step 1.2: Google Authentication via Firebase Client SDK
+  - User clicks "[ INITIALIZE SESSION ]" / "Sign in with Google".
+  - Triggers Firebase `signInWithPopup(auth, googleProvider)`.
+  - Authenticates securely against Google OAuth (client_id: 456016432422).
+  - Obtains real Google ID Token (`id_token`).
+  - Zero demo bypass: Demo buttons and mockup credentials have been completely
+    eliminated from the production application.
+
+Step 1.3: Server Token Verification & Profile Synchronization
+  - The client transmits the token to `/api/auth/session`.
+  - The server verifies token signature, issuer, audience, and expiration via a
+    zero-dependency base64url claim decoder (eliminating the heavyweight
+    `firebase-admin` package to guarantee sub-5ms cold starts).
+  - Upserts the operator profile into Supabase PostgreSQL `profiles` table
+    (firebase_uid, email, display_name, photo_url, last_login_at).
+  - Resilient fallback: If Supabase connection is delayed, the route returns
+    the verified Google token claims with HTTP 200 so the operator session
+    is never interrupted.
+
+Step 1.4: Dynamic Vocal Greeting
+  - J.A.R.V.I.S identifies the operator's first name (e.g., "Hari" from
+    `shariprassath@gmail.com`).
+  - Automatically speaks a personalized greeting:
+    "Good day, Hari. All systems are online and listening. How may I assist you today?"
+  - Seamlessly transitions into the active HUD interface.
+
+================================================================================
+3. PHASE 2: ALWAYS-ON VOICE & SPEECH RECOGNITION (STT)
+================================================================================
+Step 2.1: Continuous Listening Loop
+  - J.A.R.V.I.S utilizes the browser's native `webkitSpeechRecognition`.
+  - Automatically restarts on `onend` events to remain perpetually active
+    without requiring manual mic button taps.
+  - The HUD status badge displays "ALWAYS-ON VOICE [ACTIVE]".
+
+Step 2.2: Voice Activity Detection (VAD) with Silence Debounce
+  - While the user speaks, words accumulate in real-time interim buffers.
+  - An internal debounce timer monitors audio silence (calibrated to ~800ms).
+  - The utterance is ONLY dispatched to the neural processing pipeline when
+    natural conversational silence is detected, preventing mid-sentence cut-offs.
+
+Step 2.3: Echo & Feedback Suppression
+  - When J.A.R.V.I.S speaks (TTS active), microphone input is ignored or paused
+    so J.A.R.V.I.S never transcribes or responds to its own voice.
+  - Listening automatically resumes the exact millisecond TTS completes.
+
+Step 2.4: Barge-In (Interruption) Handling
+  - If the operator starts speaking while J.A.R.V.I.S is speaking, the system
+    detects the voice turn, immediately calls `window.speechSynthesis.cancel()`,
+    cuts the vocal output, and immediately starts listening to the operator.
+
+Step 2.5: Mobile Safari / iOS Automatic Fallback (Tap-to-Talk)
+  - iOS WebKit strictly blocks automatic continuous microphone listening without
+    a direct touch gesture per turn.
+  - J.A.R.V.I.S detects iOS/Safari or repeated WebKit speech aborts and
+    automatically switches to "Tap-to-Talk Mode".
+  - Displays a touch button "[ TAP TO SPEAK ]" / "[ LISTENING... TAP TO SEND ]"
+    so the user is never left with a broken listening state.
+
+Step 2.6: Battery & Page Visibility Management
+  - Utilizes the Page Visibility API (`document.addEventListener('visibilitychange')`).
+  - When the browser tab is backgrounded or the phone screen is locked:
+    1. Pauses the speech recognition loop to prevent battery drain.
+    2. Pauses the particle canvas rendering loop.
+    3. Displays "[ SUSPENDED: TAB INACTIVE ]".
+  - Automatically re-engages the moment the operator returns to the tab.
+
+================================================================================
+4. PHASE 3: HOLOGRAPHIC HUD, 3D CORE ORB & AUDIO EQUALIZER
+================================================================================
+Step 3.1: Volumetric Holographic Glass Orb (Centerpiece)
+  The central orb is engineered across multiple composited visual layers:
+  1. Ambient Glow Field: A soft radial cyan-violet light source (280px mobile,
+     640px desktop) breathing between 22% and 44% opacity.
+  2. Outer HUD Rotating Rings: 3 concentric SVG rings with technical tick marks,
+     viewfinder notches, and cardinal degree markers rotating at varying speeds.
+  3. Soft 40° Radar Sweep Wedge: A true conic gradient foggy wedge fading from
+     bright cyan at the leading edge to transparent at the trailing edge, masked
+     strictly between 23.5% and 42% radius (never reaching dead-center).
+  4. 3 Satellite Orbital Dots: 3 independent tracking nodes orbiting the inner
+     ring track at distinct rates (6s, 9s, 14s), continually changing relative positions.
+  5. 3D Glass Core Sphere: Features an upper-left specular glass reflection, a
+     deep concave spherical shadow on the lower-right, a frosted SVG glass grain
+     texture, and 3 swirling internal plasma blobs (cyan, purple, and gold).
+
+Step 3.2: 16-Bar Radial Audio Equalizer
+  - Positioned directly in the clear 74px–98px radial band hugging the lower inner arc.
+  - Connected to a Web Audio API `AudioContext` with an `AnalyserNode` (FFT size 64).
+  - During `LISTENING...`: Reflects live microphone frequency data.
+  - During `SPEAKING...`: Synthesizes dynamic pulsing waveforms driven by voice cadence.
+  - Each bar features a white-hot peak tip radiating outwards.
+
+Step 3.3: Tri-State Visual Color Engine
+  - `LISTENING...`: Core and rings illuminate in Electric Cyan (#4DE8E8).
+  - `THINKING...`: Transitions to Deep Violet / Magenta (#A855F7), with a
+    spinning neural loader.
+  - `SPEAKING...`: Radiates in high-energy White / Electric Cyan, with the arc
+    equalizer dancing in synchronization.
+
+================================================================================
+5. PHASE 4: BACKEND API & MULTI-LLM ROUTER ORCHESTRATION (/api/chat)
+================================================================================
+Step 4.1: Request Intake & Security
+  - Client sends HTTP POST to `/api/chat` with Authorization: `Bearer <id_token>`.
+  - Server extracts claims (`uid`, `email`, `name`).
+  - Resolves operator ID against cached profiles in-memory (10-minute TTL).
+
+Step 4.2: Memory Retrieval
+  - In parallel, queries Supabase PostgreSQL `memory` table for all stored engrams
+    belonging to this operator profile.
+
+Step 4.3: Dynamic System Prompt Construction
+  - Constructs the J.A.R.V.I.S persona prompt via `buildSystemPrompt`:
+    * Enforces the Tony Stark / Iron Man butler intelligence protocol.
+    * Addresses the user customarily as "sir" or "boss" alongside their verified name.
+    * Explicit rule: Never calls a user "Tony" unless their account is Tony Stark.
+    * Injects recalled memory facts into the prompt's active memory banks.
+    * Sets output brevity: 1-3 sentences optimized for spoken voice dialogue.
+
+Step 4.4: Multi-Provider Resilient Fallback Chain
+  The router (`src/lib/llm/router.ts`) executes a priority-based fallback:
+  1. Priority 1: Groq (`openai/gpt-oss-120b` or `llama-3.3-70b-versatile`)
+     - Ultra-low latency: typically responds in 400ms – 900ms.
+  2. Priority 2: Google Gemini (`gemini-2.5-flash`)
+     - Engages automatically if Groq hits rate limits (429) or connection issues.
+  3. Priority 3: OpenRouter (`nex-agi/nex-n2.5-pro:free`)
+     - Final free-tier fail-safe channel.
+
+Step 4.5: Circuit Breaker & Timeout Protection
+  - Strict 15,000ms timeout per provider call via `Promise.race`.
+  - Circuit Breaker trips after 4 consecutive failures on any provider, placing
+    it in a 25-second cool-off state so subsequent requests don't waste time.
+  - If all providers are unconfigured or offline, returns a vocal HUD diagnostic
+    message rather than crashing the client with HTTP 500.
+
+================================================================================
+6. PHASE 5: AUTONOMOUS TOOL EXECUTION & LONG-TERM MEMORY
+================================================================================
+If the LLM determines that external real-world intelligence is required, it
+issues a structured tool call. The backend executes the tool and performs a
+single-pass synthesis:
+
+Supported Tools:
+1. `get_weather`:
+   - Queries Open-Meteo Geocoding & Forecast APIs.
+   - Provides live temperature (°C), relative humidity (%), and wind speed (km/h).
+2. `web_search`:
+   - Queries DuckDuckGo HTML Instant API for real-time web intelligence.
+3. `calculate`:
+   - Safe math & physics computation engine (Mach speeds, kinetic energy, formulas).
+4. `stark_protocol`:
+   - Telemetry protocol: Mark 85 armor integrity, nanotech reserves, Veronica satellite
+     deployment status, and repulsor power reallocation.
+5. `flight_dynamics`:
+   - Computes orbital velocities at altitude, Mach kinetic energy, and atmospheric
+     reentry thermal loads.
+6. `remember`:
+   - Commits a key-value fact to Supabase PostgreSQL `memory` table (e.g., project codes,
+     hobbies, user preferences).
+7. `recall_memories`:
+   - Reads all stored facts for the operator to synthesize personalized responses.
+
+Single-Pass Re-invocation:
+- Once tool output is obtained, the router re-invokes the LLM with `tools: undefined`,
+  guaranteeing an immediate, single-turn natural response without infinite tool loops.
+
+================================================================================
+7. PHASE 6: VOCAL SYNTHESIS (TTS) & PERSISTENCE
+================================================================================
+Step 7.1: TTS Text Cleaning Engine
+  - LLM responses often contain markdown symbols (e.g., "**Mark 85**", "# Status",
+    "`calc()`", "⚡").
+  - `cleanTextForSpeech` strips all asterisks, hashes, backticks, URLs, and emojis.
+  - Ensures speech synthesis sounds natural, fluent, and never reads raw punctuation.
+
+Step 7.2: Vocal Playback
+  - J.A.R.V.I.S plays audio via `window.speechSynthesis`.
+  - Automatically selects a refined British/English voice (e.g., Google UK English Male,
+    Daniel, or Arthur) matching the JARVIS cadence.
+
+Step 7.3: Asynchronous Database Persistence
+  - Asynchronously writes the user prompt and assistant response to Supabase
+    `conversations` and `messages` tables.
+  - Executed in background promises (`Promise.resolve(...)`) without delaying client response.
+
+Step 7.4: Live Neural Transcript Drawer
+  - Clicking "TRANSCRIPT [n]" opens a slide-up glassmorphism drawer.
+  - Users can review the full conversational dialogue, message roles, and timestamps.
+
+================================================================================
+8. PHASE 7: RESPONSIVE MOBILE ARCHITECTURE (320px to 4K)
+================================================================================
+J.A.R.V.I.S is engineered to deliver a seamless experience across all viewports:
+- Mobile Small (320px – 480px, e.g. iPhone SE):
+  * Zero horizontal overflow: `scrollWidth === innerWidth`.
+  * Orb scales to 220px (never below 200px threshold to preserve ring clarity).
+  * Top HUD collapses to `OP // [Name]` and compact `+ NEW` / `EXIT` touch targets.
+  * Title font scaled to `text-3xl tracking-[0.22em]`.
+  * Dynamic viewport units (`100dvh`) and iOS safe-area insets (`env(safe-area-inset-bottom)`).
+- Tablet (768px – 1024px):
+  * Orb scales to 330px with balanced padding.
+- Desktop (1025px+):
+  * 400px orb with 640px ambient glow field.
+  * 95 atmospheric cyan and purple floating ember particles.
+  * Desktop particle density scales down to 32 on mobile GPUs for locked 60fps.
+
+================================================================================
+9. PHASE 8: PRODUCTION DEPLOYMENT & VERCEL CONFIGURATION
+================================================================================
+1. Production Build:
+   - Next.js Turbopack compiler (`npm run build`).
+   - Serverless functions configured with `export const dynamic = 'force-dynamic'`
+     and `export const maxDuration = 30`.
+2. Environment Variables Required on Vercel:
+   - Firebase Client:
+     * `NEXT_PUBLIC_FIREBASE_API_KEY`
+     * `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+     * `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+     * `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+     * `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+     * `NEXT_PUBLIC_FIREBASE_APP_ID`
+     * `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
+   - Supabase:
+     * `NEXT_PUBLIC_SUPABASE_URL`
+     * `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+     * `SUPABASE_URL`
+     * `SUPABASE_SERVICE_ROLE_KEY`
+   - LLM Providers:
+     * `GROQ_API_KEY`
+     * `GEMINI_API_KEY`
+     * `OPENROUTER_API_KEY`
+3. Firebase Console Whitelist:
+   - Add `jarvis-27.vercel.app` to Firebase Authentication -> Settings -> Authorized domains.
+
+================================================================================
+                     END OF WORKFLOW SPECIFICATION
+================================================================================
