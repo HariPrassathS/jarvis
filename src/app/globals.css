@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+/* ──────────────────────────────────────────── */
+/* JARVIS — Global Styles & HUD Theme            */
+/* ──────────────────────────────────────────── */
+
+:root {
+  --jarvis-bg-black: #000000;
+  --jarvis-cyan: #4DE8E8;
+  --jarvis-cyan-glow: rgba(77, 232, 232, 0.4);
+  --jarvis-magenta: #f43f5e;
+  --jarvis-violet: #8b5cf6;
+  --jarvis-grid-color: rgba(77, 232, 232, 0.035);
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+/* Base */
+html,
+body {
+  background-color: #000000;
+  color: #ffffff;
+  font-family: var(--font-mono), 'JetBrains Mono', 'Space Mono', monospace;
+  overflow-x: hidden;
+  height: 100%;
+  min-height: 100dvh;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Hide scrollbars for mobile carousels */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Blueprint Grid Background - ~40-60px subtle grid */
+.hud-grid-overlay {
+  background-color: #000000;
+  background-image: 
+    linear-gradient(var(--jarvis-grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--jarvis-grid-color) 1px, transparent 1px);
+  background-size: 50px 50px;
+  background-position: center center;
+}
+
+/* Vignette */
+.vignette {
+  background: radial-gradient(
+    circle at center,
+    transparent 40%,
+    rgba(0, 0, 0, 0.6) 80%,
+    rgba(0, 0, 0, 0.95) 100%
+  );
+  pointer-events: none;
+}
+
+/* Scanline effect */
+.hud-scanline {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(77, 232, 232, 0.005) 2px,
+    rgba(77, 232, 232, 0.005) 4px
+  );
+  pointer-events: none;
+}
+
+/* Scrollbar styling */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(77, 232, 232, 0.2);
+  border-radius: 2px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(77, 232, 232, 0.4);
+}
+
+/* Glowing Bloom Filter */
+.glow-cyan {
+  filter: drop-shadow(0 0 12px rgba(77, 232, 232, 0.5)) drop-shadow(0 0 24px rgba(77, 232, 232, 0.25));
+}
+
+.glow-torus {
+  filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.4)) 
+          drop-shadow(0 0 30px rgba(244, 63, 94, 0.3)) 
+          drop-shadow(0 0 40px rgba(77, 232, 232, 0.5));
+}
+
+.glow-core {
+  box-shadow: 
+    0 0 25px rgba(77, 232, 232, 0.6),
+    0 0 50px rgba(77, 232, 232, 0.35),
+    inset 0 0 20px rgba(255, 255, 255, 0.4);
+}
+
+/* Continuous rotation animation */
+@keyframes ring-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-ring-slow {
+  animation: ring-rotate 25s linear infinite;
+}
+
+.animate-ring-fast {
+  animation: ring-rotate 12s linear infinite;
+}
+
+.animate-ring-reverse {
+  animation: ring-rotate 18s linear infinite reverse;
+}
+
+.animate-ring-reverse-fast {
+  animation: ring-rotate 9s linear infinite reverse;
+}
+
+/* Atmospheric horizontal scanline radar sweep (7s cycle) */
+@keyframes hud-scan-glide {
+  0% {
+    transform: translateY(-120px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.35;
+  }
+  85% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(105vh);
+    opacity: 0;
+  }
+}
+
+.hud-scan-sweep {
+  animation: hud-scan-glide 7.5s ease-in-out infinite;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(77, 232, 232, 0.04) 40%,
+    rgba(77, 232, 232, 0.18) 50%,
+    rgba(77, 232, 232, 0.04) 60%,
+    transparent 100%
+  );
+  will-change: transform, opacity;
+}
+
+/* Selection */
+::selection {
+  background: rgba(77, 232, 232, 0.35);
+  color: #ffffff;
+}
