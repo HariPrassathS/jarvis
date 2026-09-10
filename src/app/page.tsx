@@ -477,7 +477,11 @@ export default function Home() {
       </AnimatePresence>
 
       {/* ═══ MAIN STAGE: THE CONTINUOUS CENTERPIECE ORB & STAGED CONTENT ═══ */}
-      <main className="relative z-20 flex-1 flex flex-col items-center justify-center px-2 sm:px-4 -translate-y-1 sm:-translate-y-4">
+      <main
+        className={`relative z-20 flex-1 flex flex-col items-center justify-center px-2 sm:px-4 ${
+          isSelectionMode ? 'py-1 sm:py-2' : '-translate-y-1 sm:-translate-y-4'
+        }`}
+      >
         <div className={`flex flex-col items-center w-full transition-[max-width] duration-500 ${isSelectionMode ? 'max-w-4xl' : 'max-w-lg'}`}>
 
           {/* ═══ SEED POINT OF LIGHT (Phase 0 entrance only) ═══ */}
@@ -500,7 +504,11 @@ export default function Home() {
           {/* ═══ THE CONTINUOUS HOLOGRAPHIC ORB (Never Unmounted) ═══ */}
           <motion.div
             layout="position"
-            className={`relative flex items-center justify-center ${isSelectionMode ? 'pointer-events-none' : ''}`}
+            className={`${
+              isSelectionMode
+                ? 'absolute pointer-events-none opacity-0 scale-0 -z-50'
+                : 'relative flex items-center justify-center'
+            }`}
             initial={false}
             animate={{
               scale: isLandingMode

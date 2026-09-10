@@ -284,14 +284,14 @@ export default function JarvisOrb({
 
   const stageSizeClasses = useMemo(() => {
     if (size === 'sm') {
-      return 'w-[150px] h-[150px] sm:w-[170px] sm:h-[170px] md:w-[185px] md:h-[185px] min-w-[130px] min-h-[130px]';
+      return 'w-[110px] h-[110px] sm:w-[125px] sm:h-[125px] md:w-[135px] md:h-[135px] min-w-[95px] min-h-[95px]';
     }
     return 'w-[220px] h-[220px] sm:w-[270px] sm:h-[270px] md:w-[330px] md:h-[330px] lg:w-[400px] lg:h-[400px] min-w-[200px] min-h-[200px]';
   }, [size]);
 
   const ambientSpreadClasses = useMemo(() => {
     if (size === 'sm') {
-      return 'w-[180px] h-[180px] sm:w-[230px] sm:h-[230px] blur-[22px] sm:blur-[32px]';
+      return 'w-[130px] h-[130px] sm:w-[155px] sm:h-[155px] blur-[16px] sm:blur-[22px]';
     }
     return 'w-[280px] h-[280px] sm:w-[360px] sm:h-[360px] md:w-[480px] md:h-[480px] lg:w-[640px] lg:h-[640px] blur-[36px] sm:blur-[50px] md:blur-[72px] lg:blur-[95px]';
   }, [size]);
@@ -475,7 +475,7 @@ export default function JarvisOrb({
             frosted grain, and 3 high-contrast drifting plasma blobs distinctly visible in stills. */}
         <div
           className={`relative w-[35%] h-[35%] rounded-full overflow-hidden flex items-center justify-center z-10 transition-[filter] duration-500 ease-out ${
-            size === 'sm' ? 'min-w-[46px] min-h-[46px]' : 'min-w-[72px] min-h-[72px]'
+            size === 'sm' ? 'min-w-[36px] min-h-[36px]' : 'min-w-[72px] min-h-[72px]'
           }`}
           style={{
             filter: coreBrightnessFilter,
