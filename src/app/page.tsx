@@ -24,6 +24,7 @@ import ChatPanel from '@/components/chat/ChatPanel';
 import AudioSentryToggle from '@/components/voice/AudioSentryToggle';
 import AtmosphericField from '@/components/hud/AtmosphericField';
 import SignInButton from '@/components/auth/SignInButton';
+import IntelligenceSelection from '@/components/auth/IntelligenceSelection';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
@@ -37,6 +38,7 @@ export type NarrativePhase =
   | 'phase1_handshake'
   | 'phase2_verifying'
   | 'phase3_confirmed'
+  | 'phase3_5_selection'
   | 'phase4_booting'
   | 'phase5_online';
 
@@ -95,12 +97,12 @@ export default function Home() {
     }
   }, [user, authLoading, narrativePhase]);
 
-  // ── Auto-advance sequence: Phase 3 (Confirmed) -> Phase 4 (Booting) -> Phase 5 (Online) ──
+  // ── Auto-advance sequence: Phase 3 (Confirmed) -> Phase 3.5 (Intelligence Selection) ──
   useEffect(() => {
     if (narrativePhase === 'phase3_confirmed') {
       const timer = setTimeout(() => {
-        setNarrativePhase('phase4_booting');
-      }, reducedMotion ? 200 : 600);
+        setNarrativePhase('phase3_5_selection');
+      }, reducedMotion ? 200 : 700);
       return () => clearTimeout(timer);
     }
 
@@ -405,6 +407,15 @@ export default function Home() {
     setTitleRevealCount(TITLE_CHARS.length);
   }, [signOut, stopSpeaking]);
 
+  // ── Handle Persona Selection in Phase 3.5 ──
+  const handleSelectPersona = useCallback(
+    (chosenPersona: VoicePersona) => {
+      handlePersonaChange(chosenPersona);
+      setNarrativePhase('phase4_booting');
+    },
+    [handlePersonaChange]
+  );
+
   // ── Map Narrative Phase to Orb's internal boot phase ──
   const orbBootPhase: BootNarrativePhase = useMemo(() => {
     switch (narrativePhase) {
@@ -419,19 +430,25 @@ export default function Home() {
       case 'phase5_online':
         return 'online';
       case 'phase0_dormant':
+      case 'phase3_5_selection':
       default:
         return 'dormant';
     }
   }, [narrativePhase]);
 
-  const isLandingMode = narrativePhase !== 'phase4_booting' && narrativePhase !== 'phase5_online';
+  const isLandingMode =
+    narrativePhase === 'phase0_dormant' ||
+    narrativePhase === 'phase1_handshake' ||
+    narrativePhase === 'phase2_verifying' ||
+    narrativePhase === 'phase3_confirmed';
+  const isSelectionMode = narrativePhase === 'phase3_5_selection';
   const isTransitioning = narrativePhase === 'phase4_booting';
   const isHudActive = narrativePhase === 'phase5_online';
 
   return (
     <div className="min-h-screen min-h-dvh h-dvh bg-black hud-grid-overlay relative overflow-hidden flex flex-col justify-between select-none">
       {/* ── Dynamic Cinematic Atmospheric Field ── */}
-      <AtmosphericField mode={isLandingMode ? 'landing' : 'active'} />
+      <AtmosphericField mode={isLandingMode || isSelectionMode ? 'landing' : 'active'} />
 
       {/* ═══ HUD OVERLAY (TOP BAR & VIEWFINDFERS) — Animates in during Phase 4 & 5 ═══ */}
       <AnimatePresence>
@@ -458,7 +475,7 @@ export default function Home() {
 
       {/* ═══ MAIN STAGE: THE CONTINUOUS CENTERPIECE ORB & STAGED CONTENT ═══ */}
       <main className="relative z-20 flex-1 flex flex-col items-center justify-center px-2 sm:px-4 -translate-y-1 sm:-translate-y-4">
-        <div className="flex flex-col items-center w-full max-w-lg">
+        <div className={`flex flex-col items-center w-full transition-[max-width] duration-500 ${isSelectionMode ? 'max-w-4xl' : 'max-w-lg'}`}>
 
           {/* ═══ SEED POINT OF LIGHT (Phase 0 entrance only) ═══ */}
           {isLandingMode && entranceIndex === 1 && (
@@ -480,7 +497,7 @@ export default function Home() {
           {/* ═══ THE CONTINUOUS HOLOGRAPHIC ORB (Never Unmounted) ═══ */}
           <motion.div
             layout="position"
-            className="relative flex items-center justify-center"
+            className={`relative flex items-center justify-center ${isSelectionMode ? 'pointer-events-none' : ''}`}
             initial={false}
             animate={{
               scale: isLandingMode
@@ -489,9 +506,17 @@ export default function Home() {
                   : entranceIndex >= 2
                   ? 0.65
                   : 0.1
+                : isSelectionMode
+                ? 0
                 : 1,
               y: isLandingMode ? 0 : 0,
-              opacity: isLandingMode ? (entranceIndex >= 2 ? 1 : 0) : 1,
+              opacity: isLandingMode
+                ? entranceIndex >= 2
+                  ? 1
+                  : 0
+                : isSelectionMode
+                ? 0
+                : 1,
             }}
             transition={{
               scale: {
@@ -506,13 +531,14 @@ export default function Home() {
                 damping: 24,
                 duration: 0.85,
               },
-              opacity: { duration: 0.4 },
+              opacity: { duration: 0.35 },
             }}
           >
             <JarvisOrb
               state={jarvisState}
               bootPhase={orbBootPhase}
-              hideLabel={isLandingMode || narrativePhase !== 'phase5_online'}
+              persona={persona}
+              hideLabel={!isHudActive}
             />
           </motion.div>
 
@@ -657,6 +683,20 @@ export default function Home() {
                   </span>
                 </motion.p>
               </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ═══ PHASE 3.5: INTELLIGENCE SELECTION SCREEN ═══ */}
+          <AnimatePresence mode="wait">
+            {isSelectionMode && (
+              <IntelligenceSelection
+                key="intelligence-selection-pod"
+                operatorName={firstName}
+                initialPersona={persona}
+                onSelect={handleSelectPersona}
+                onPreviewVoice={(text, p) => speak(text, p)}
+                reducedMotion={reducedMotion}
+              />
             )}
           </AnimatePresence>
 

@@ -479,12 +479,20 @@ SECTION 12: BIOMETRIC HANDSHAKE & SYSTEM BOOT NARRATIVE
      * When identity is confirmed, the ring system flashes a quick bright cyan pulse (`#00FFFF`, bloom expansion).
      * Native Web Audio Stark confirmation chime plays instantly.
      * Status text swaps to personalized payoff: `✓ IDENTITY CONFIRMED — WELCOME, [FIRST NAME]`.
+   - Phase 3.5: Intelligence Selection (Ceremonial AI Persona Choice)
+     * File: `src/components/auth/IntelligenceSelection.tsx`
+     * Header: `BIOMETRIC LOCK VERIFIED // OPERATOR: [NAME] — SELECT ACTIVE INTELLIGENCE`
+     * Subheader: `CHOOSE TACTICAL NEURAL ARCHITECTURE FOR THIS OPERATIONAL CYCLE`
+     * Dual interactive holographic pods with live mini orbs and distinct visual identities:
+       - J.A.R.V.I.S: Cool cyan (`#00FFFF`/`#4DE8E8`) + deep blue/violet, measured rotation cadence (25s/14s/7s), "Measured. Precise. Unfailingly loyal.", UK British butler badge, acoustic hover preview ("At your service, sir.").
+       - F.R.I.D.A.Y: Electric rose (`#F43F5E`), coral (`#FB7185`), warm amber (`#F59E0B`), lilac (`#C084FC`), agile fluid rotation cadence (16s/9s/4.8s), "Warmer. Faster. Endlessly resourceful.", Tactical Irish warm badge, acoustic hover preview ("Hey, boss. Ready when you are.").
+     * Fully keyboard accessible (`tabIndex={0}`, Enter/Space key triggers).
+     * On activation: Chosen card flashes an intense confirmation glow, unselected card recedes and fades, and chosen mini orb acts as the seed that morphs into the main HUD center orb in that persona's color scheme.
    - Phase 4: System Boot (Continuous HUD Hand-off, 800ms-1.2s)
-     * Landing chrome (title, tagline, button) fades and slides down.
-     * The EXACT same centerpiece orb smoothly glides and scales up to HUD center (scale 0.84 -> 1.0).
-     * HUD chrome draws itself in around the orb sequentially: top bar (`OPERATOR // [NAME]`, persona toggle) drops down, status pill rises up, telemetry bridge activates, and bottom chat bar slides in.
+     * The chosen persona's orb smoothly glides and scales up to HUD center (scale 0.84 -> 1.0) with that persona's theme.
+     * HUD chrome draws itself in around the orb sequentially: top bar (`OPERATOR // [NAME]`, persona badge `J.A.R.V.I.S // CORE v1.0` or `F.R.I.D.A.Y // CORE v1.0`) drops down, status pill rises up, telemetry bridge activates (`SYS.ACTIVE` or `FRIDAY.ONLINE`), and bottom chat bar slides in.
    - Phase 5: Operator Online (Idle Settle & Synchronized Voice Greeting)
-     * App settles into normal idle/listening state.
+     * App settles into normal idle/listening state in the chosen persona's palette.
      * Initial personalized voice greeting ("Good day, [Name]..." / "Hey there, [Name]...") is timed to start right as Phase 5 begins, synchronizing audio and visual arrival.
 
 3. ZERO-DEPENDENCY NATIVE WEB AUDIO STARK CHIME:

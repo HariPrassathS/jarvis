@@ -13,7 +13,7 @@
 
 import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { JarvisState } from '@/types';
+import type { JarvisState, VoicePersona } from '@/types';
 import { useAudioVisualizer } from '@/hooks/useAudioVisualizer';
 
 export type BootNarrativePhase =
@@ -28,9 +28,17 @@ interface JarvisOrbProps {
   state: JarvisState;
   hideLabel?: boolean;
   bootPhase?: BootNarrativePhase;
+  persona?: VoicePersona;
+  size?: 'sm' | 'md' | 'lg';
 }
 
-export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProps) {
+export default function JarvisOrb({
+  state,
+  hideLabel,
+  bootPhase,
+  persona = 'jarvis',
+  size = 'md',
+}: JarvisOrbProps) {
   const { levels: audioLevels, volume } = useAudioVisualizer({
     isActive: state === 'listening' || state === 'speaking',
     barCount: 16,
@@ -42,30 +50,38 @@ export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProp
     return state;
   }, [bootPhase, state]);
 
-  // ── Tri-state color discipline + boot narrative themes ──
+  const isFriday = persona === 'friday';
+
+  // ── Tri-state color discipline + boot narrative themes + dual persona identity ──
   const colorTheme = useMemo(() => {
     if (bootPhase === 'confirmed') {
       return {
-        primary: '#00FFFF',
-        secondary: '#4DE8E8',
-        ambient:
-          'radial-gradient(circle, rgba(0, 255, 255, 0.7) 0%, rgba(77, 232, 232, 0.45) 35%, rgba(0, 255, 255, 0.12) 65%, transparent 100%)',
-        coreBase:
-          'radial-gradient(circle at 35% 35%, #0891b2 0%, #0e7490 45%, #083344 80%, #000000 100%)',
+        primary: isFriday ? '#FB7185' : '#00FFFF',
+        secondary: isFriday ? '#F43F5E' : '#4DE8E8',
+        ambient: isFriday
+          ? 'radial-gradient(circle, rgba(251, 113, 133, 0.7) 0%, rgba(244, 63, 94, 0.45) 35%, rgba(192, 132, 252, 0.15) 65%, transparent 100%)'
+          : 'radial-gradient(circle, rgba(0, 255, 255, 0.7) 0%, rgba(77, 232, 232, 0.45) 35%, rgba(0, 255, 255, 0.12) 65%, transparent 100%)',
+        coreBase: isFriday
+          ? 'radial-gradient(circle at 35% 35%, #9f1239 0%, #4c0519 45%, #1f0208 80%, #000000 100%)'
+          : 'radial-gradient(circle at 35% 35%, #0891b2 0%, #0e7490 45%, #083344 80%, #000000 100%)',
         concaveShadow:
           'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
-        plasma1: '#00FFFF', // Ultra-cyan
-        plasma2: '#38BDF8', // Sky cyan
-        plasma3: '#FFFFFF', // High-lumens pure white
-        radarConic:
-          'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(0,255,255,0.08) 8deg, rgba(77,232,232,0.35) 20deg, rgba(0,255,255,0.75) 32deg, rgba(224,255,255,0.95) 38deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)',
-        glowFilter: 'drop-shadow(0 0 22px rgba(0, 255, 255, 0.95))',
-        stateText: '#00FFFF',
-        arcBase: '#00FFFF',
+        plasma1: isFriday ? '#FB7185' : '#00FFFF', // High-lumens rose/cyan
+        plasma2: isFriday ? '#C084FC' : '#38BDF8', // Lilac/Sky
+        plasma3: '#FFFFFF', // Pure white core
+        radarConic: isFriday
+          ? 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(244,63,94,0.08) 8deg, rgba(251,113,133,0.35) 20deg, rgba(244,63,94,0.75) 32deg, rgba(255,228,230,0.95) 38deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)'
+          : 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(0,255,255,0.08) 8deg, rgba(77,232,232,0.35) 20deg, rgba(0,255,255,0.75) 32deg, rgba(224,255,255,0.95) 38deg, rgba(255,255,255,1) 40deg, transparent 40.5deg, transparent 360deg)',
+        glowFilter: isFriday
+          ? 'drop-shadow(0 0 22px rgba(244, 63, 94, 0.95))'
+          : 'drop-shadow(0 0 22px rgba(0, 255, 255, 0.95))',
+        stateText: isFriday ? '#FB7185' : '#00FFFF',
+        arcBase: isFriday ? '#FB7185' : '#00FFFF',
         arcPeak: '#FFFFFF',
         specularColor: 'rgba(255, 255, 255, 1)',
-        innerShadow:
-          'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 24px rgba(0, 255, 255, 0.65)',
+        innerShadow: isFriday
+          ? 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 24px rgba(251, 113, 133, 0.65)'
+          : 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 24px rgba(0, 255, 255, 0.65)',
       };
     }
 
@@ -74,60 +90,121 @@ export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProp
         return {
           primary: '#F59E0B',
           secondary: '#FCD34D',
-          ambient: 'radial-gradient(circle, rgba(245, 158, 11, 0.45) 0%, rgba(217, 119, 6, 0.28) 40%, rgba(245, 158, 11, 0.08) 70%, transparent 100%)',
-          coreBase: 'radial-gradient(circle at 35% 35%, #78350f 0%, #451a03 50%, #1c0a00 85%, #000000 100%)',
-          concaveShadow: 'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+          ambient:
+            'radial-gradient(circle, rgba(245, 158, 11, 0.45) 0%, rgba(217, 119, 6, 0.28) 40%, rgba(245, 158, 11, 0.08) 70%, transparent 100%)',
+          coreBase:
+            'radial-gradient(circle at 35% 35%, #78350f 0%, #451a03 50%, #1c0a00 85%, #000000 100%)',
+          concaveShadow:
+            'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
           plasma1: '#F59E0B', // Warm amber
           plasma2: '#EA580C', // Deep orange
           plasma3: '#FFFBEB', // White-hot core
-          radarConic: 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(245,158,11,0.04) 8deg, rgba(245,158,11,0.22) 20deg, rgba(245,158,11,0.55) 32deg, rgba(251,191,36,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
+          radarConic:
+            'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(245,158,11,0.04) 8deg, rgba(245,158,11,0.22) 20deg, rgba(245,158,11,0.55) 32deg, rgba(251,191,36,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
           glowFilter: 'drop-shadow(0 0 14px rgba(245, 158, 11, 0.75))',
           stateText: '#F59E0B',
           arcBase: '#F59E0B',
           arcPeak: '#FFFFFF',
           specularColor: 'rgba(255, 251, 235, 0.95)',
-          innerShadow: 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(245, 158, 11, 0.35)',
+          innerShadow:
+            'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(245, 158, 11, 0.35)',
         };
       case 'speaking':
-        return {
-          primary: '#38BDF8',
-          secondary: '#E0F2FE',
-          ambient: 'radial-gradient(circle, rgba(56, 189, 248, 0.5) 0%, rgba(14, 165, 233, 0.3) 40%, rgba(56, 189, 248, 0.08) 70%, transparent 100%)',
-          coreBase: 'radial-gradient(circle at 35% 35%, #0369a1 0%, #082f49 50%, #031826 85%, #000000 100%)',
-          concaveShadow: 'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
-          plasma1: '#38BDF8', // Electric sky blue
-          plasma2: '#2563EB', // Deep royal blue
-          plasma3: '#FFFFFF', // Pure white
-          radarConic: 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(56,189,248,0.04) 8deg, rgba(56,189,248,0.22) 20deg, rgba(56,189,248,0.55) 32deg, rgba(186,230,253,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
-          glowFilter: 'drop-shadow(0 0 16px rgba(56, 189, 248, 0.8))',
-          stateText: '#E0F2FE',
-          arcBase: '#38BDF8',
-          arcPeak: '#FFFFFF',
-          specularColor: 'rgba(255, 255, 255, 0.95)',
-          innerShadow: 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(56, 189, 248, 0.4)',
-        };
+        return isFriday
+          ? {
+              primary: '#FB7185',
+              secondary: '#FFE4E6',
+              ambient:
+                'radial-gradient(circle, rgba(251, 113, 133, 0.5) 0%, rgba(244, 63, 94, 0.3) 40%, rgba(251, 113, 133, 0.08) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #9f1239 0%, #4c0519 50%, #1f0208 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#FB7185', // Electric coral
+              plasma2: '#E11D48', // Deep crimson
+              plasma3: '#FFFFFF', // Pure white
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(251,113,133,0.04) 8deg, rgba(251,113,133,0.22) 20deg, rgba(251,113,133,0.55) 32deg, rgba(255,228,230,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 16px rgba(251, 113, 133, 0.8))',
+              stateText: '#FFE4E6',
+              arcBase: '#FB7185',
+              arcPeak: '#FFFFFF',
+              specularColor: 'rgba(255, 255, 255, 0.95)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(251, 113, 133, 0.4)',
+            }
+          : {
+              primary: '#38BDF8',
+              secondary: '#E0F2FE',
+              ambient:
+                'radial-gradient(circle, rgba(56, 189, 248, 0.5) 0%, rgba(14, 165, 233, 0.3) 40%, rgba(56, 189, 248, 0.08) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #0369a1 0%, #082f49 50%, #031826 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#38BDF8', // Electric sky blue
+              plasma2: '#2563EB', // Deep royal blue
+              plasma3: '#FFFFFF', // Pure white
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(56,189,248,0.04) 8deg, rgba(56,189,248,0.22) 20deg, rgba(56,189,248,0.55) 32deg, rgba(186,230,253,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 16px rgba(56, 189, 248, 0.8))',
+              stateText: '#E0F2FE',
+              arcBase: '#38BDF8',
+              arcPeak: '#FFFFFF',
+              specularColor: 'rgba(255, 255, 255, 0.95)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(56, 189, 248, 0.4)',
+            };
       case 'listening':
       case 'idle':
       default:
-        return {
-          primary: '#4DE8E8',
-          secondary: '#C026D3',
-          ambient: 'radial-gradient(circle, rgba(77, 232, 232, 0.48) 0%, rgba(192, 38, 211, 0.3) 40%, rgba(77, 232, 232, 0.08) 70%, transparent 100%)',
-          coreBase: 'radial-gradient(circle at 35% 35%, #0e7490 0%, #083344 50%, #02121e 85%, #000000 100%)',
-          concaveShadow: 'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
-          plasma1: '#00F5FF', // Electric vibrant cyan
-          plasma2: '#C026D3', // Vibrant purple/magenta
-          plasma3: '#FFFFFF', // High-lumens white core
-          radarConic: 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(77,232,232,0.04) 8deg, rgba(77,232,232,0.22) 20deg, rgba(77,232,232,0.55) 32deg, rgba(125,245,245,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
-          glowFilter: 'drop-shadow(0 0 14px rgba(77, 232, 232, 0.75))',
-          stateText: '#4DE8E8',
-          arcBase: '#4DE8E8',
-          arcPeak: '#FFFFFF',
-          specularColor: 'rgba(224, 255, 255, 0.95)',
-          innerShadow: 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(77, 232, 232, 0.4)',
-        };
+        return isFriday
+          ? {
+              primary: '#F43F5E', // Rose 500
+              secondary: '#C084FC', // Lilac 400
+              ambient:
+                'radial-gradient(circle, rgba(244, 63, 94, 0.48) 0%, rgba(192, 132, 252, 0.3) 40%, rgba(245, 158, 11, 0.08) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #881337 0%, #4c0519 50%, #1a0208 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#FB7185', // Electric coral-rose
+              plasma2: '#C084FC', // Radiant lilac
+              plasma3: '#FFF1F2', // Warm radiant core
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(244,63,94,0.04) 8deg, rgba(251,113,133,0.22) 20deg, rgba(244,63,94,0.55) 32deg, rgba(253,164,175,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 16px rgba(244, 63, 94, 0.8))',
+              stateText: '#FB7185',
+              arcBase: '#FB7185',
+              arcPeak: '#FFF1F2',
+              specularColor: 'rgba(255, 241, 242, 0.95)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(251, 113, 133, 0.45)',
+            }
+          : {
+              primary: '#4DE8E8',
+              secondary: '#C026D3',
+              ambient:
+                'radial-gradient(circle, rgba(77, 232, 232, 0.48) 0%, rgba(192, 38, 211, 0.3) 40%, rgba(77, 232, 232, 0.08) 70%, transparent 100%)',
+              coreBase:
+                'radial-gradient(circle at 35% 35%, #0e7490 0%, #083344 50%, #02121e 85%, #000000 100%)',
+              concaveShadow:
+                'radial-gradient(circle at 68% 68%, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 45%, transparent 75%)',
+              plasma1: '#00F5FF', // Electric vibrant cyan
+              plasma2: '#C026D3', // Vibrant purple/magenta
+              plasma3: '#FFFFFF', // High-lumens white core
+              radarConic:
+                'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(77,232,232,0.04) 8deg, rgba(77,232,232,0.22) 20deg, rgba(77,232,232,0.55) 32deg, rgba(125,245,245,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
+              glowFilter: 'drop-shadow(0 0 14px rgba(77, 232, 232, 0.75))',
+              stateText: '#4DE8E8',
+              arcBase: '#4DE8E8',
+              arcPeak: '#FFFFFF',
+              specularColor: 'rgba(224, 255, 255, 0.95)',
+              innerShadow:
+                'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(77, 232, 232, 0.4)',
+            };
     }
-  }, [effectiveState, bootPhase]);
+  }, [effectiveState, bootPhase, isFriday]);
 
   const voiceScale = 1 + (state === 'listening' || state === 'speaking' ? volume * 0.14 : 0);
 
@@ -173,42 +250,58 @@ export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProp
   // Plasma churn speed multiplier from voice volume
   const plasmaDriftMul = 1 + volume * 1.2;
 
-  // ── Dynamic boot narrative animation timings ──
+  // ── Dynamic boot narrative animation timings & persona kinematics ──
   const radarSweepDuration = useMemo(() => {
     if (bootPhase === 'handshake') return '2s';
     if (bootPhase === 'verifying') return '3s';
     if (bootPhase === 'confirmed') return '1.4s';
+    if (isFriday) return effectiveState === 'thinking' ? '2.8s' : '4.8s';
     return effectiveState === 'thinking' ? '3.5s' : '7s';
-  }, [bootPhase, effectiveState]);
+  }, [bootPhase, effectiveState, isFriday]);
 
   const ring1Duration = useMemo(() => {
     if (bootPhase === 'handshake') return '4.5s';
     if (bootPhase === 'verifying') return '8s';
     if (bootPhase === 'confirmed') return '2s';
+    if (isFriday) return '16s';
     return '25s';
-  }, [bootPhase]);
+  }, [bootPhase, isFriday]);
 
   const ring2Duration = useMemo(() => {
     if (bootPhase === 'handshake') return '2.6s';
     if (bootPhase === 'verifying') return '5s';
     if (bootPhase === 'confirmed') return '1.5s';
+    if (isFriday) return effectiveState === 'thinking' ? '5.2s' : '9s';
     return effectiveState === 'thinking' ? '7s' : '14s';
-  }, [bootPhase, effectiveState]);
+  }, [bootPhase, effectiveState, isFriday]);
 
   const coreBrightnessFilter = useMemo(() => {
     if (bootPhase === 'handshake') return 'brightness(1.24) contrast(1.1)';
-    if (bootPhase === 'confirmed') return 'brightness(1.5) drop-shadow(0 0 28px #00ffff)';
+    if (bootPhase === 'confirmed')
+      return `brightness(1.5) drop-shadow(0 0 28px ${isFriday ? '#fb7185' : '#00ffff'})`;
     return 'none';
-  }, [bootPhase]);
+  }, [bootPhase, isFriday]);
+
+  const stageSizeClasses = useMemo(() => {
+    if (size === 'sm') {
+      return 'w-[150px] h-[150px] sm:w-[170px] sm:h-[170px] md:w-[185px] md:h-[185px] min-w-[130px] min-h-[130px]';
+    }
+    return 'w-[220px] h-[220px] sm:w-[270px] sm:h-[270px] md:w-[330px] md:h-[330px] lg:w-[400px] lg:h-[400px] min-w-[200px] min-h-[200px]';
+  }, [size]);
+
+  const ambientSpreadClasses = useMemo(() => {
+    if (size === 'sm') {
+      return 'w-[180px] h-[180px] sm:w-[230px] sm:h-[230px] blur-[22px] sm:blur-[32px]';
+    }
+    return 'w-[280px] h-[280px] sm:w-[360px] sm:h-[360px] md:w-[480px] md:h-[480px] lg:w-[640px] lg:h-[640px] blur-[36px] sm:blur-[50px] md:blur-[72px] lg:blur-[95px]';
+  }, [size]);
 
   return (
     <div className="relative flex flex-col items-center justify-center select-none">
 
-      {/* ═══ FIX 5: AMBIENT GLOW FIELD (Responsive Spread & Blur) ═══
-          Scales from 280px on mobile to 640px on desktop.
-          Noticeable opacity-breathing loop (22% <-> 44%) and scale pulse across 10s+. */}
+      {/* ═══ AMBIENT GLOW FIELD ═══ */}
       <motion.div
-        className="absolute w-[280px] h-[280px] sm:w-[360px] sm:h-[360px] md:w-[480px] md:h-[480px] lg:w-[640px] lg:h-[640px] rounded-full pointer-events-none -z-10 blur-[36px] sm:blur-[50px] md:blur-[72px] lg:blur-[95px]"
+        className={`absolute rounded-full pointer-events-none -z-10 ${ambientSpreadClasses}`}
         style={{
           background: colorTheme.ambient,
         }}
@@ -228,9 +321,9 @@ export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProp
         }}
       />
 
-      {/* ═══ Main Holographic Stage Container (Responsive: 220px to 400px, min 200px) ═══ */}
+      {/* ═══ Main Holographic Stage Container ═══ */}
       <motion.div
-        className="relative flex items-center justify-center w-[220px] h-[220px] sm:w-[270px] sm:h-[270px] md:w-[330px] md:h-[330px] lg:w-[400px] lg:h-[400px] min-w-[200px] min-h-[200px]"
+        className={`relative flex items-center justify-center ${stageSizeClasses}`}
         animate={{
           scale: bootPhase === 'confirmed' ? voiceScale * 1.06 : voiceScale,
         }}
@@ -381,7 +474,9 @@ export default function JarvisOrb({ state, hideLabel, bootPhase }: JarvisOrbProp
             Deep volumetric ball with concave inner shadow, upper-left specular reflection,
             frosted grain, and 3 high-contrast drifting plasma blobs distinctly visible in stills. */}
         <div
-          className="relative w-[35%] h-[35%] min-w-[72px] min-h-[72px] rounded-full overflow-hidden flex items-center justify-center z-10 transition-[filter] duration-500 ease-out"
+          className={`relative w-[35%] h-[35%] rounded-full overflow-hidden flex items-center justify-center z-10 transition-[filter] duration-500 ease-out ${
+            size === 'sm' ? 'min-w-[46px] min-h-[46px]' : 'min-w-[72px] min-h-[72px]'
+          }`}
           style={{
             filter: coreBrightnessFilter,
             boxShadow: `
