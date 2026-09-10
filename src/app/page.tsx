@@ -47,14 +47,17 @@ type LandingEntranceStep = 'black' | 'seed' | 'bloom' | 'core' | 'title' | 'read
 export default function Home() {
   const { user, profile, loading: authLoading, signOut, devSignIn } = useAuth();
 
-  // ── Dual Persona State (JARVIS / FRIDAY) with instant LocalStorage boot ──
-  const [persona, setPersona] = useState<VoicePersona>(() => {
+  // ── Dual Persona State (JARVIS / FRIDAY) with SSR-safe hydration ──
+  const [persona, setPersona] = useState<VoicePersona>('jarvis');
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('jarvis_voice_persona');
-      if (stored === 'friday' || stored === 'jarvis') return stored;
+      if (stored === 'friday' || stored === 'jarvis') {
+        setPersona(stored);
+      }
     }
-    return 'jarvis';
-  });
+  }, []);
 
   // ── Reduced Motion Preference ──
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -197,7 +200,7 @@ export default function Home() {
     } catch (err: any) {
       console.warn('[Handshake] Authentication failed or cancelled:', err);
       if (err?.code === 'auth/popup-closed-by-user') {
-        setCustomAuthError('Biometric handshake cancelled by operator.');
+        setCustomAuthError('Authentication handshake cancelled by operator.');
       } else {
         setCustomAuthError('Signal lost, sir — let\'s try that again.');
       }
@@ -606,7 +609,7 @@ export default function Home() {
                         className="flex items-center gap-2 text-[#F59E0B] font-mono text-[11px] sm:text-xs tracking-[0.22em] uppercase font-semibold drop-shadow-[0_0_10px_rgba(245,158,11,0.6)]"
                       >
                         <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-ping" />
-                        <span>VERIFYING BIOMETRIC SIGNATURE</span>
+                        <span>AUTHENTICATING OPERATOR CLEARANCE</span>
                         <span className="inline-flex gap-0.5 tracking-normal">
                           <span className="animate-pulse">.</span>
                           <span className="animate-pulse delay-100">.</span>

@@ -471,21 +471,24 @@ SECTION 12: BIOMETRIC HANDSHAKE & SYSTEM BOOT NARRATIVE
    - Phase 1: Handshake Initiated (0-800ms)
      * The moment the user clicks "Sign in with Google", the button morphs into a compact HUD loading state with concentric rotating rings and label: `INITIATING HANDSHAKE...`.
      * The central orb accelerates noticeably: inner ring speed accelerates from 25s to 4.5s; outer ring from 14s to 2.6s; core brightens.
-   - Phase 2: Verifying Biometric Signature (OAuth & Session Verification)
-     * Title and tagline fade down in opacity to 25%.
-     * Dedicated status line appears beneath the orb: `VERIFYING BIOMETRIC SIGNATURE ...` with an animated pulsing amber dot.
-     * The orb's radar sweep shifts into the amber/gold (`#F59E0B`) palette, matching the system-wide tri-color thinking language.
-   - Phase 3: Identity Confirmed (The Payoff Moment, 300-500ms)
-     * When identity is confirmed, the ring system flashes a quick bright cyan pulse (`#00FFFF`, bloom expansion).
+   - Phase 2: Verifying Clearance (800ms - 1.8s)
+     * Title/tagline drops to 25% opacity.
+     * Amber radar sweep activates on the orb (`#F59E0B`), matching system-wide "thinking" color language.
+     * Active status indicator appears beneath the orb: `AUTHENTICATING OPERATOR CLEARANCE ...` with an animated pulsing amber dot.
+     * Handshake pill shows spinning HUD ring and `VERIFYING CREDENTIALS...`.
+   - Phase 3: Identity Confirmed (The Payoff Beat, 300-500ms)
+     * Inner and outer rings flash a bright cyan bloom pulse (`#00FFFF`, `brightness(1.5)`).
      * Native Web Audio Stark confirmation chime plays instantly.
      * Status text swaps to personalized payoff: `✓ IDENTITY CONFIRMED — WELCOME, [FIRST NAME]`.
    - Phase 3.5: Intelligence Selection (Ceremonial AI Persona Choice)
      * File: `src/components/auth/IntelligenceSelection.tsx`
-     * Header: `BIOMETRIC LOCK VERIFIED // OPERATOR: [NAME] — SELECT ACTIVE INTELLIGENCE`
-     * Subheader: `CHOOSE TACTICAL NEURAL ARCHITECTURE FOR THIS OPERATIONAL CYCLE`
-     * Dual interactive holographic pods with live mini orbs and distinct visual identities:
-       - J.A.R.V.I.S: Cool cyan (`#00FFFF`/`#4DE8E8`) + deep blue/violet, measured rotation cadence (25s/14s/7s), "Measured. Precise. Unfailingly loyal.", UK British butler badge, acoustic hover preview ("At your service, sir.").
-       - F.R.I.D.A.Y: Electric rose (`#F43F5E`), coral (`#FB7185`), warm amber (`#F59E0B`), lilac (`#C084FC`), agile fluid rotation cadence (16s/9s/4.8s), "Warmer. Faster. Endlessly resourceful.", Tactical Irish warm badge, acoustic hover preview ("Hey, boss. Ready when you are.").
+     * Header Badge: `STARK INDUSTRIES // OPERATOR: [NAME] · LEVEL 9`
+     * Supertitle: `HARI PRASSATH PRESENTS` (glowing cyan-white-rose gradient with tracking)
+     * Main Title: `AUTONOMOUS INTELLIGENCE MATRIX`
+     * Subtitle: `ENGINEERED BY HARI PRASSATH // SELECT ACTIVE NEURAL PERSONA FOR THIS OPERATIONAL CYCLE`
+     * Dual interactive holographic pods with live mini orbs, distinct visual identities, and interactive telemetry:
+       - J.A.R.V.I.S: Cool cyan (`#00FFFF`/`#4DE8E8`) + deep blue/violet, measured rotation cadence (25s/14s/7s), "Measured. Precise. Unfailingly loyal.", UK British butler badge, interactive telemetry chips (`RESPONSE: 12ms`, `FIDELITY: 99.7%`, `ARCHITECT: HARI P.`), interactive voice preview button with animated soundwave visualizers ("At your service, sir. Standing by for your command.").
+       - F.R.I.D.A.Y: Electric rose (`#F43F5E`), coral (`#FB7185`), warm amber (`#F59E0B`), lilac (`#C084FC`), agile fluid rotation cadence (16s/9s/4.8s), "Warmer. Faster. Endlessly resourceful.", Tactical Irish warm badge, interactive telemetry chips (`RESPONSE: 8ms`, `AGILITY: 99.9%`, `ARCHITECT: HARI P.`), interactive voice preview button with animated soundwave visualizers ("Hey, boss. Systems hot and ready when you are.").
      * Fully keyboard accessible (`tabIndex={0}`, Enter/Space key triggers).
      * On activation: Chosen card flashes an intense confirmation glow, unselected card recedes and fades, and chosen mini orb acts as the seed that morphs into the main HUD center orb in that persona's color scheme.
    - Phase 4: System Boot (Continuous HUD Hand-off, 800ms-1.2s)

@@ -2,12 +2,14 @@
 
 // ──────────────────────────────────────────────
 // IntelligenceSelection — Phase 3.5 Boot Narrative
+// HARI PRASSATH PRESENTS: Autonomous Intelligence Systems
 // Dual Persona Pods: J.A.R.V.I.S (Core Intelligence) vs F.R.I.D.A.Y (Adaptive Intelligence)
-// Features: Live Mini Orbs, Acoustic Hover Previews, Keyboard Accessibility & Smooth Handoff
+// Features: Live Mini Orbs, Interactive Voice Previews with Soundwave Visualizers,
+// Tactical Telemetry Chips, Keyboard Accessibility & Seamless Morphing Handoff
 // ──────────────────────────────────────────────
 
-import { useState, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import JarvisOrb from '@/components/hud/JarvisOrb';
 import type { VoicePersona } from '@/types';
 
@@ -28,13 +30,22 @@ export default function IntelligenceSelection({
 }: IntelligenceSelectionProps) {
   const [hoveredPersona, setHoveredPersona] = useState<VoicePersona | null>(null);
   const [selectedPersona, setSelectedPersona] = useState<VoicePersona | null>(null);
+  const [playingVoice, setPlayingVoice] = useState<VoicePersona | null>(null);
   const lastPreviewedRef = useRef<{ persona: VoicePersona; timestamp: number } | null>(null);
+  const voiceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Debounced audio voice preview on hover/focus to prevent stuttering
+  useEffect(() => {
+    return () => {
+      if (voiceTimeoutRef.current) clearTimeout(voiceTimeoutRef.current);
+    };
+  }, []);
+
+  // Debounced audio voice preview on hover or button click
   const handleVoicePreview = useCallback(
-    (persona: VoicePersona) => {
+    (persona: VoicePersona, force: boolean = false) => {
       const now = Date.now();
       if (
+        !force &&
         lastPreviewedRef.current &&
         lastPreviewedRef.current.persona === persona &&
         now - lastPreviewedRef.current.timestamp < 3500
@@ -42,10 +53,18 @@ export default function IntelligenceSelection({
         return; // Prevent repeating audio if still playing or hovered recently
       }
       lastPreviewedRef.current = { persona, timestamp: now };
+      setPlayingVoice(persona);
+
+      if (voiceTimeoutRef.current) clearTimeout(voiceTimeoutRef.current);
+      voiceTimeoutRef.current = setTimeout(() => {
+        setPlayingVoice(null);
+      }, 2800);
 
       if (onPreviewVoice) {
         const sampleLine =
-          persona === 'friday' ? 'Hey, boss. Ready when you are.' : 'At your service, sir.';
+          persona === 'friday'
+            ? 'Hey, boss. Systems hot and ready when you are.'
+            : 'At your service, sir. Standing by for your command.';
         onPreviewVoice(sampleLine, persona);
       }
     },
@@ -65,6 +84,11 @@ export default function IntelligenceSelection({
     [selectedPersona, onSelect, reducedMotion]
   );
 
+  const displayOperator =
+    operatorName && operatorName !== 'Operator' && operatorName.length > 1
+      ? operatorName.toUpperCase()
+      : 'HARI PRASSATH';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: reducedMotion ? 0 : 18 }}
@@ -78,25 +102,43 @@ export default function IntelligenceSelection({
       transition={{ duration: reducedMotion ? 0.2 : 0.55, ease: 'easeOut' }}
       className="flex flex-col items-center justify-center w-full max-w-4xl px-3 sm:px-6 py-2 select-none z-20"
     >
-      {/* ── Screen Header ── */}
-      <div className="text-center mb-4 sm:mb-6">
+      {/* ── Presentation Header ── */}
+      <div className="text-center mb-4 sm:mb-6 flex flex-col items-center">
+        {/* Security Clearance Pill */}
         <motion.div
           initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[#4DE8E8]/20 bg-black/60 backdrop-blur-md mb-2"
+          className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full border border-[#4DE8E8]/30 bg-black/70 backdrop-blur-md mb-2 shadow-[0_0_15px_rgba(77,232,232,0.15)]"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[#4DE8E8] animate-ping" />
-          <span className="text-[9.5px] sm:text-[10.5px] font-mono tracking-[0.24em] text-[#4DE8E8]/90 uppercase font-semibold">
-            BIOMETRIC LOCK VERIFIED // OPERATOR: {operatorName.toUpperCase()}
+          <span className="text-[9px] sm:text-[10px] font-mono tracking-[0.24em] text-[#4DE8E8] uppercase font-semibold">
+            STARK INDUSTRIES // OPERATOR: {displayOperator} · LEVEL 9
           </span>
         </motion.div>
 
-        <h2 className="text-xl sm:text-2xl md:text-3xl font-mono tracking-[0.22em] text-white font-light uppercase drop-shadow-[0_0_12px_rgba(255,255,255,0.3)]">
-          SELECT ACTIVE INTELLIGENCE
+        {/* HARI PRASSATH PRESENTS — Impressive Holographic Supertitle */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="flex items-center gap-2 mb-1"
+        >
+          <div className="h-px w-6 sm:w-12 bg-gradient-to-r from-transparent to-[#4DE8E8]/60" />
+          <span className="text-[11px] sm:text-xs md:text-sm font-mono tracking-[0.32em] uppercase font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#4DE8E8] via-[#FFFFFF] to-[#FB7185] drop-shadow-[0_0_14px_rgba(77,232,232,0.6)]">
+            HARI PRASSATH PRESENTS
+          </span>
+          <div className="h-px w-6 sm:w-12 bg-gradient-to-l from-transparent to-[#FB7185]/60" />
+        </motion.div>
+
+        {/* Main Title */}
+        <h2 className="text-xl sm:text-2xl md:text-3xl font-mono tracking-[0.22em] text-white font-light uppercase drop-shadow-[0_0_14px_rgba(255,255,255,0.3)]">
+          AUTONOMOUS INTELLIGENCE MATRIX
         </h2>
-        <p className="mt-1 text-[10px] sm:text-xs font-mono tracking-[0.16em] text-white/40 uppercase">
-          Choose tactical neural architecture for this operational cycle
+
+        {/* In-Universe Subtitle */}
+        <p className="mt-1 text-[10px] sm:text-xs font-mono tracking-[0.16em] text-white/50 uppercase max-w-xl mx-auto">
+          Engineered by Hari Prassath // Select active neural persona for this operational cycle
         </p>
       </div>
 
@@ -151,8 +193,8 @@ export default function IntelligenceSelection({
         >
           {/* Top Pill: Persona Badge & Protocol Tag */}
           <div className="w-full flex items-center justify-between gap-2 mb-1">
-            <span className="text-[9px] font-mono tracking-[0.2em] text-[#4DE8E8]/60 uppercase">
-              ARCH // MK-85
+            <span className="text-[9px] font-mono tracking-[0.2em] text-[#4DE8E8]/70 uppercase font-semibold">
+              ARCH // MK-85 · STARK TECH
             </span>
             <span className="text-[9px] font-mono tracking-widest px-2 py-0.5 rounded-full border border-[#4DE8E8]/30 bg-[#4DE8E8]/10 text-[#4DE8E8] uppercase font-semibold">
               CORE AI
@@ -160,9 +202,15 @@ export default function IntelligenceSelection({
           </div>
 
           {/* Live Mini Orb Preview (JARVIS Cyan / Violet Theme) */}
-          <div className="relative my-2 sm:my-3 flex items-center justify-center h-[160px] sm:h-[180px] w-full pointer-events-none">
+          <div className="relative my-2 sm:my-3 flex items-center justify-center h-[155px] sm:h-[175px] w-full pointer-events-none">
             <JarvisOrb
-              state={selectedPersona === 'jarvis' ? 'speaking' : 'idle'}
+              state={
+                selectedPersona === 'jarvis' || playingVoice === 'jarvis'
+                  ? 'speaking'
+                  : hoveredPersona === 'jarvis'
+                  ? 'thinking'
+                  : 'idle'
+              }
               persona="jarvis"
               size="sm"
               hideLabel
@@ -174,27 +222,63 @@ export default function IntelligenceSelection({
             J.A.R.V.I.S
           </h3>
           <p className="text-[10px] sm:text-[11px] font-mono tracking-[0.16em] text-[#4DE8E8]/80 font-medium uppercase mt-0.5">
-            CORE INTELLIGENCE
+            CORE COGNITIVE INTELLIGENCE
           </p>
 
-          <p className="text-[11px] sm:text-xs font-mono tracking-wider text-white/55 mt-2 italic px-2">
+          <p className="text-[11px] sm:text-xs font-mono tracking-wider text-white/60 mt-1.5 italic px-2">
             &ldquo;Measured. Precise. Unfailingly loyal.&rdquo;
           </p>
 
-          {/* Voice Preview Badge & Activation Button */}
-          <div className="mt-4 w-full pt-3 border-t border-[#4DE8E8]/15 flex items-center justify-between gap-2">
-            <span className="text-[9px] font-mono tracking-wider text-[#4DE8E8]/60 uppercase flex items-center gap-1">
-              <svg className="w-3 h-3 text-[#4DE8E8]" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              UK BRITISH // BUTLER
-            </span>
+          {/* Interactive Tactical Telemetry Specs */}
+          <div className="mt-3 w-full grid grid-cols-3 gap-1.5 py-1.5 px-2 rounded-lg bg-black/40 border border-[#4DE8E8]/15 text-[9px] font-mono">
+            <div className="flex flex-col items-center">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">RESPONSE</span>
+              <span className="text-[#4DE8E8] font-bold tracking-widest">12ms</span>
+            </div>
+            <div className="flex flex-col items-center border-x border-[#4DE8E8]/10">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">FIDELITY</span>
+              <span className="text-[#4DE8E8] font-bold tracking-widest">99.7%</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">ARCHITECT</span>
+              <span className="text-white/80 font-semibold tracking-wider">HARI P.</span>
+            </div>
+          </div>
 
+          {/* Interactive Voice Preview Button & Activation Button */}
+          <div className="mt-3.5 w-full pt-3 border-t border-[#4DE8E8]/15 flex items-center justify-between gap-2">
+            {/* Interactive Audio Preview Trigger */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleVoicePreview('jarvis', true);
+              }}
+              title="Click to preview JARVIS synthesized voice"
+              className="group/btn flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-[#4DE8E8]/25 bg-[#4DE8E8]/10 hover:bg-[#4DE8E8]/20 hover:border-[#4DE8E8]/50 text-[9px] font-mono tracking-wider text-[#4DE8E8] transition-all duration-200 cursor-pointer"
+            >
+              {/* Animated Soundwave Frequency Bars */}
+              <div className="flex items-center gap-0.5 h-3">
+                {[4, 8, 12, 6].map((h, idx) => (
+                  <span
+                    key={idx}
+                    className={`w-0.5 rounded-full transition-all duration-150 ${
+                      playingVoice === 'jarvis'
+                        ? 'bg-[#00FFFF] animate-pulse'
+                        : 'bg-[#4DE8E8]/40 group-hover/btn:bg-[#4DE8E8]'
+                    }`}
+                    style={{
+                      height: playingVoice === 'jarvis' ? `${h}px` : '4px',
+                    }}
+                  />
+                ))}
+              </div>
+              <span className="uppercase font-semibold">
+                {playingVoice === 'jarvis' ? 'PLAYING...' : 'PREVIEW VOICE'}
+              </span>
+            </button>
+
+            {/* Activation Button */}
             <span
               className={`px-3 py-1 rounded-full text-[10px] font-mono tracking-widest uppercase transition-all duration-200 ${
                 selectedPersona === 'jarvis'
@@ -202,7 +286,7 @@ export default function IntelligenceSelection({
                   : 'bg-[#4DE8E8]/20 text-[#4DE8E8] group-hover:bg-[#4DE8E8] group-hover:text-black font-semibold'
               }`}
             >
-              {selectedPersona === 'jarvis' ? 'ACTIVATING...' : 'ACTIVATE'}
+              {selectedPersona === 'jarvis' ? 'ACTIVATING...' : 'ENGAGE'}
             </span>
           </div>
         </motion.div>
@@ -256,8 +340,8 @@ export default function IntelligenceSelection({
         >
           {/* Top Pill: Persona Badge & Protocol Tag */}
           <div className="w-full flex items-center justify-between gap-2 mb-1">
-            <span className="text-[9px] font-mono tracking-[0.2em] text-rose-300/60 uppercase">
-              ARCH // TAC-02
+            <span className="text-[9px] font-mono tracking-[0.2em] text-rose-300/70 uppercase font-semibold">
+              ARCH // TAC-02 · ADAPTIVE CORE
             </span>
             <span className="text-[9px] font-mono tracking-widest px-2 py-0.5 rounded-full border border-rose-400/30 bg-rose-500/10 text-rose-300 uppercase font-semibold">
               ADAPTIVE AI
@@ -265,9 +349,15 @@ export default function IntelligenceSelection({
           </div>
 
           {/* Live Mini Orb Preview (FRIDAY Rose / Coral / Lilac Theme) */}
-          <div className="relative my-2 sm:my-3 flex items-center justify-center h-[160px] sm:h-[180px] w-full pointer-events-none">
+          <div className="relative my-2 sm:my-3 flex items-center justify-center h-[155px] sm:h-[175px] w-full pointer-events-none">
             <JarvisOrb
-              state={selectedPersona === 'friday' ? 'speaking' : 'idle'}
+              state={
+                selectedPersona === 'friday' || playingVoice === 'friday'
+                  ? 'speaking'
+                  : hoveredPersona === 'friday'
+                  ? 'thinking'
+                  : 'idle'
+              }
               persona="friday"
               size="sm"
               hideLabel
@@ -279,27 +369,63 @@ export default function IntelligenceSelection({
             F.R.I.D.A.Y
           </h3>
           <p className="text-[10px] sm:text-[11px] font-mono tracking-[0.16em] text-rose-300 font-medium uppercase mt-0.5">
-            ADAPTIVE INTELLIGENCE
+            ADAPTIVE NEURAL INTELLIGENCE
           </p>
 
-          <p className="text-[11px] sm:text-xs font-mono tracking-wider text-white/55 mt-2 italic px-2">
+          <p className="text-[11px] sm:text-xs font-mono tracking-wider text-white/60 mt-1.5 italic px-2">
             &ldquo;Warmer. Faster. Endlessly resourceful.&rdquo;
           </p>
 
-          {/* Voice Preview Badge & Activation Button */}
-          <div className="mt-4 w-full pt-3 border-t border-rose-400/15 flex items-center justify-between gap-2">
-            <span className="text-[9px] font-mono tracking-wider text-rose-300/60 uppercase flex items-center gap-1">
-              <svg className="w-3 h-3 text-rose-400" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              TACTICAL IRISH // WARM
-            </span>
+          {/* Interactive Tactical Telemetry Specs */}
+          <div className="mt-3 w-full grid grid-cols-3 gap-1.5 py-1.5 px-2 rounded-lg bg-black/40 border border-rose-400/15 text-[9px] font-mono">
+            <div className="flex flex-col items-center">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">RESPONSE</span>
+              <span className="text-rose-300 font-bold tracking-widest">8ms</span>
+            </div>
+            <div className="flex flex-col items-center border-x border-rose-400/10">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">AGILITY</span>
+              <span className="text-rose-300 font-bold tracking-widest">99.9%</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-white/40 uppercase text-[8px] tracking-wider">ARCHITECT</span>
+              <span className="text-white/80 font-semibold tracking-wider">HARI P.</span>
+            </div>
+          </div>
 
+          {/* Interactive Voice Preview Button & Activation Button */}
+          <div className="mt-3.5 w-full pt-3 border-t border-rose-400/15 flex items-center justify-between gap-2">
+            {/* Interactive Audio Preview Trigger */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleVoicePreview('friday', true);
+              }}
+              title="Click to preview FRIDAY synthesized voice"
+              className="group/btn flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-rose-400/25 bg-rose-500/10 hover:bg-rose-500/20 hover:border-rose-400/50 text-[9px] font-mono tracking-wider text-rose-300 transition-all duration-200 cursor-pointer"
+            >
+              {/* Animated Soundwave Frequency Bars */}
+              <div className="flex items-center gap-0.5 h-3">
+                {[6, 12, 8, 10].map((h, idx) => (
+                  <span
+                    key={idx}
+                    className={`w-0.5 rounded-full transition-all duration-150 ${
+                      playingVoice === 'friday'
+                        ? 'bg-[#FB7185] animate-pulse'
+                        : 'bg-rose-400/40 group-hover/btn:bg-rose-300'
+                    }`}
+                    style={{
+                      height: playingVoice === 'friday' ? `${h}px` : '4px',
+                    }}
+                  />
+                ))}
+              </div>
+              <span className="uppercase font-semibold">
+                {playingVoice === 'friday' ? 'PLAYING...' : 'PREVIEW VOICE'}
+              </span>
+            </button>
+
+            {/* Activation Button */}
             <span
               className={`px-3 py-1 rounded-full text-[10px] font-mono tracking-widest uppercase transition-all duration-200 ${
                 selectedPersona === 'friday'
@@ -307,7 +433,7 @@ export default function IntelligenceSelection({
                   : 'bg-rose-500/20 text-rose-300 group-hover:bg-[#FB7185] group-hover:text-black font-semibold'
               }`}
             >
-              {selectedPersona === 'friday' ? 'ACTIVATING...' : 'ACTIVATE'}
+              {selectedPersona === 'friday' ? 'ACTIVATING...' : 'ENGAGE'}
             </span>
           </div>
         </motion.div>
