@@ -140,7 +140,7 @@ export async function callGroq(
     }
 
     try {
-      const completion = await client.chat.completions.create(params);
+      const completion = await client.chat.completions.create(params, { timeout: 5000 });
       const choice = completion.choices[0];
 
       return {
@@ -215,7 +215,7 @@ export async function* streamGroq(
     }
 
     try {
-      const stream = await client.chat.completions.create(params);
+      const stream = await client.chat.completions.create(params, { timeout: 5000 });
 
       // Accumulate tool calls across chunks (they arrive in parts)
       const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
