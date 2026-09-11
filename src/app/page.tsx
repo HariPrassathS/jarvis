@@ -403,6 +403,8 @@ export default function Home() {
   // Voice recognition callback
   const handleSpeechComplete = useCallback(
     (text: string) => {
+      console.log('[Page:VoicePipeline] 🎙️ handleSpeechComplete received speech text:', text);
+
       // 1. Immediately stop any active speech synthesis (barge-in / interruption)
       stopSpeaking();
 
@@ -410,7 +412,7 @@ export default function Home() {
       if (lastAssistantResponseRef.current) {
         const elapsed = Date.now() - lastAssistantResponseRef.current.timestamp;
         if (isEchoArtifact(text, lastAssistantResponseRef.current.text, elapsed)) {
-          console.warn('[EchoSuppression] 🛑 Intercepted self-echo artifact. Discarding:', text);
+          console.warn('[Page:VoicePipeline] 🛑 Intercepted self-echo artifact. Discarding:', text);
           diagnosticLogger.log('speech', 'Echo artifact intercepted by circuit breaker', {
             text,
             elapsedMs: elapsed,
@@ -420,6 +422,7 @@ export default function Home() {
         }
       }
 
+      console.log('[Page:VoicePipeline] 📨 Forwarding to useChat sendMessage...');
       sendMessage(text, persona);
       setSessionQueryCount((c) => c + 1);
     },
@@ -428,6 +431,7 @@ export default function Home() {
 
   // Barge-In callback
   const handleBargeIn = useCallback(() => {
+    console.log('[Page:VoicePipeline] ⚡ User barge-in triggered -> stopping speech');
     stopSpeaking();
   }, [stopSpeaking]);
 
@@ -614,6 +618,7 @@ export default function Home() {
     if (isStreaming && lastMsg.content) {
       // Reset sentence tracker if this is a new streaming message
       if (streamingMsgIndexRef.current !== lastIdx) {
+        console.log(`[Page:TTS] 🎬 Started streaming message at index ${lastIdx}`);
         streamingMsgIndexRef.current = lastIdx;
         lastQueuedSentenceIdxRef.current = 0;
         lastSpokenIndexRef.current = lastIdx; // Mark as being handled
@@ -634,6 +639,7 @@ export default function Home() {
         const end = boundaries[i];
         const sentence = content.slice(start, end).trim();
         if (sentence.length > 0) {
+          console.log(`[Page:TTS] 🗣️ Queuing completed streaming sentence [${i + 1}/${boundaries.length}]: "${sentence}"`);
           queueSentence(sentence, persona);
         }
       }
@@ -646,6 +652,7 @@ export default function Home() {
 
     // Stream just finished — queue all newly completed sentences and any remaining un-spoken tail
     if (!isStreaming && streamingMsgIndexRef.current === lastIdx && lastMsg.content) {
+      console.log(`[Page:TTS] 🏁 Stream finished for message at index ${lastIdx}. Flushing remaining sentences & tail.`);
       const content = lastMsg.content;
       const boundaries: number[] = [];
       let match;
@@ -660,6 +667,7 @@ export default function Home() {
         const end = boundaries[i];
         const sentence = content.slice(start, end).trim();
         if (sentence.length > 0) {
+          console.log(`[Page:TTS] 🗣️ Flushing final sentence: "${sentence}"`);
           queueSentence(sentence, persona);
         }
       }
@@ -670,6 +678,7 @@ export default function Home() {
       if (lastBoundary < content.length) {
         const tail = content.slice(lastBoundary).trim();
         if (tail.length > 0) {
+          console.log(`[Page:TTS] 🗣️ Flushing final tail: "${tail}"`);
           queueSentence(tail, persona);
         }
       }
@@ -681,6 +690,7 @@ export default function Home() {
 
     // Non-streaming / single-payload: speak full message (greetings, history replay, fallback)
     if (!isStreaming && lastSpokenIndexRef.current !== lastIdx) {
+      console.log(`[Page:TTS] 📢 Speaking non-streaming full message at index ${lastIdx}: "${lastMsg.content.slice(0, 50)}..."`);
       lastSpokenIndexRef.current = lastIdx;
       lastAssistantResponseRef.current = { text: lastMsg.content, timestamp: Date.now() };
       speak(lastMsg.content, persona);

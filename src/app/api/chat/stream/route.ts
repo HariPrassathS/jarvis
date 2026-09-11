@@ -22,12 +22,16 @@ import { checkEasterEgg } from '@/lib/llm/easter-eggs';
 import type { ChatMessage, VoicePersona, StreamChunk, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
+  const reqStart = Date.now();
+  console.log('[Server:ChatStream] 🚀 Incoming /api/chat/stream request received at', new Date().toISOString());
+
   try {
     // 1. Authenticate via verified Firebase ID Token
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
+      console.warn('[Server:ChatStream] ❌ Missing or malformed Authorization header');
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized: Missing token' }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -36,10 +40,11 @@ export async function POST(req: NextRequest) {
     let decoded;
     try {
       decoded = await verifyIdToken(idToken);
+      console.log(`[Server:ChatStream] 🔑 Token verified for UID: ${decoded.uid} (${decoded.email || 'no-email'})`);
     } catch (authErr) {
-      console.error('[Chat Stream API] Token verification rejected:', authErr);
+      console.error('[Server:ChatStream] ❌ Token verification rejected:', authErr);
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized: Invalid token' }),
         { status: 401, headers: { 'Content-Type': 'application/json' } }
       );
     }
@@ -283,6 +288,8 @@ export async function POST(req: NextRequest) {
     // 9. Create SSE stream
     const encoder = new TextEncoder();
 
+    console.log(`[Server:ChatStream] 🎬 Creating SSE stream with preferredProvider=${preferredProvider}, persona=${effectivePersona}, messagesCount=${llmMessages.length}`);
+
     const stream = new ReadableStream({
       async start(controller) {
         const sendSSE = (data: StreamChunk) => {
@@ -292,6 +299,7 @@ export async function POST(req: NextRequest) {
         try {
           let accumulatedContent = '';
           let providerUsed = '';
+          let chunkCount = 0;
           let toolCallsReceived: StreamChunk['tool_calls'] | undefined;
 
           for await (const chunk of routeChatStream({
@@ -299,6 +307,7 @@ export async function POST(req: NextRequest) {
             tools: authorizedTools,
             preferredProvider,
           })) {
+            chunkCount++;
             // Forward token to client
             if (chunk.token) {
               accumulatedContent += chunk.token;
@@ -309,13 +318,13 @@ export async function POST(req: NextRequest) {
             if (chunk.tool_calls) {
               toolCallsReceived = chunk.tool_calls;
               providerUsed = chunk.provider_used || '';
+              console.log(`[Server:ChatStream] 🛠️ Tool calls received (${chunk.tool_calls.length} calls) from provider ${providerUsed}`);
 
               // Execute tools with clearance context
               const toolResults = await executeToolCalls(chunk.tool_calls, profile.id, {
                 googleAccessToken,
                 clearanceLevel: operatorClearance,
               });
-
 
               // Build messages for synthesis re-invocation
               const synthMessages: ChatMessage[] = [
@@ -352,8 +361,9 @@ export async function POST(req: NextRequest) {
                   done: true,
                   provider_used: synthResponse.provider_used,
                 });
+                console.log(`[Server:ChatStream] 🛠️ Tool synthesis completed (${accumulatedContent.length} chars)`);
               } catch (synthErr) {
-                console.warn('[Chat Stream API] Tool synthesis fallback:', synthErr);
+                console.warn('[Server:ChatStream] Tool synthesis fallback:', synthErr);
                 sendSSE({
                   done: true,
                   provider_used: providerUsed as any,
@@ -367,6 +377,7 @@ export async function POST(req: NextRequest) {
             // Stream done signal
             if (chunk.done) {
               providerUsed = chunk.provider_used || providerUsed;
+              console.log(`[Server:ChatStream] ✅ Provider ${providerUsed} signaled stream done (chunks: ${chunkCount}, chars: ${accumulatedContent.length})`);
               sendSSE({
                 done: true,
                 provider_used: chunk.provider_used,
@@ -376,9 +387,30 @@ export async function POST(req: NextRequest) {
 
             // Error signal
             if (chunk.error) {
-              sendSSE({ error: chunk.error, done: true });
+              console.error(`[Server:ChatStream] ❌ Provider chunk error:`, chunk.error);
+              if (!accumulatedContent) {
+                const fallbackResponse =
+                  effectivePersona === 'friday'
+                    ? "Satellite relays are encountering brief interference, boss. All primary tactical buffers remain ready."
+                    : "Apologies, sir. Neural uplinks to primary satellite arrays encountered temporary interference. Core systems remain nominal.";
+                accumulatedContent = fallbackResponse;
+                sendSSE({ token: fallbackResponse });
+              }
+              sendSSE({ error: chunk.error, done: true, provider_used: (providerUsed || 'reserve-auxiliary') as any });
               break;
             }
+          }
+
+          // Fail-safe: If stream produced 0 characters, emit emergency auxiliary response so client is never left empty
+          if (!accumulatedContent.trim()) {
+            console.warn('[Server:ChatStream] ⚠️ Stream ended with 0 tokens. Emitting auxiliary reserve message.');
+            const emergencyMsg =
+              effectivePersona === 'friday'
+                ? "Tactical comms reconnected, boss. All systems are online and listening."
+                : "Auxiliary neural relays online, sir. All core diagnostics nominal and listening.";
+            accumulatedContent = emergencyMsg;
+            sendSSE({ token: emergencyMsg });
+            providerUsed = providerUsed || 'reserve-auxiliary';
           }
 
           // Finalize: conversation_id and persona metadata
@@ -387,7 +419,8 @@ export async function POST(req: NextRequest) {
             provider_used: (providerUsed || undefined) as any,
           });
 
-          const finalContent = accumulatedContent.trim() || 'At your service, sir. All systems are operational.';
+          const finalContent = accumulatedContent.trim();
+          console.log(`[Server:ChatStream] 🏁 Stream finished in ${Date.now() - reqStart}ms. Final content preview: "${finalContent.slice(0, 60)}..."`);
 
           // Persist assistant response (fire-and-forget)
           Promise.resolve(

@@ -80,11 +80,10 @@ function getNextHealthyClient(): { client: OpenAI; key: string } {
 
 // Active Free models on OpenRouter with multi-model fallback mesh
 const OPENROUTER_MODELS = [
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'google/gemini-2.0-flash-exp:free',
-  'deepseek/deepseek-r1:free',
-  'qwen/qwen-2.5-72b-instruct:free',
-  'mistralai/mistral-7b-instruct:free',
+  'nvidia/nemotron-3.5-lightning:free',
+  'google/gemma-4-31b-it:free',
+  'nex-agi/nex-n2.5-pro:free',
+  'inclusionai/ling-3.0-flash-vl:free',
 ];
 
 function toOpenAIMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {

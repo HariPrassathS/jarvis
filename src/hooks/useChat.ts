@@ -125,10 +125,25 @@ export function useChat(): UseChatReturn {
     const currentUser = userRef.current;
     const hasAttachments = Boolean(attachments && attachments.length > 0);
     const trimmed = content.trim();
-    if (!currentUser || (!trimmed && !hasAttachments)) return;
+
+    console.log('[useChat:Lifecycle] 🎙️ sendMessage invoked:', {
+      content: trimmed,
+      persona,
+      hasAttachments,
+      hasUser: Boolean(currentUser),
+    });
+
+    if (!currentUser || (!trimmed && !hasAttachments)) {
+      console.warn('[useChat:Lifecycle] ⚠️ Aborted sendMessage: missing user or empty content', {
+        hasUser: Boolean(currentUser),
+        trimmedLength: trimmed.length,
+      });
+      return;
+    }
 
     // Cancel any in-flight stream
     if (abortRef.current) {
+      console.log('[useChat:Lifecycle] Aborting prior in-flight request controller');
       abortRef.current.abort();
     }
     const abortController = new AbortController();
@@ -152,6 +167,19 @@ export function useChat(): UseChatReturn {
     setIsStreaming(false);
     setError(null);
 
+    const payload = {
+      messages: updatedMessages.slice(-20),
+      conversation_id: conversationIdRef.current,
+      voice_persona: persona,
+    };
+
+    console.log('[useChat:Lifecycle] 📤 Firing fetch to /api/chat/stream with payload:', {
+      messagesCount: payload.messages.length,
+      lastMessage: defaultContent,
+      conversationId: payload.conversation_id,
+      persona: payload.voice_persona,
+    });
+
     try {
       const idToken = await currentUser.getIdToken();
       const currentGoogleToken = googleTokenRef.current;
@@ -167,35 +195,45 @@ export function useChat(): UseChatReturn {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: requestHeaders,
-        body: JSON.stringify({
-          messages: updatedMessages.slice(-20),
-          conversation_id: conversationIdRef.current,
-          voice_persona: persona,
-        }),
+        body: JSON.stringify(payload),
         signal: abortController.signal,
+      });
+
+      console.log('[useChat:Lifecycle] 📥 /api/chat/stream response received:', {
+        status: res.status,
+        statusText: res.statusText,
+        contentType: res.headers.get('content-type'),
+        convIdHeader: res.headers.get('X-Conversation-Id'),
+        personaHeader: res.headers.get('X-Voice-Persona'),
       });
 
       // If streaming endpoint returns non-200 or non-SSE, fall back to blocking
       if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
-        // Fall back to blocking /api/chat endpoint
+        console.warn('[useChat:Lifecycle] Streaming unavailable or non-SSE response. Falling back to blocking /api/chat...', {
+          status: res.status,
+          contentType: res.headers.get('content-type'),
+        });
+
         const fallbackRes = await fetch('/api/chat', {
           method: 'POST',
           headers: requestHeaders,
-          body: JSON.stringify({
-            messages: updatedMessages.slice(-20),
-            conversation_id: conversationIdRef.current,
-            voice_persona: persona,
-          }),
+          body: JSON.stringify(payload),
           signal: abortController.signal,
         });
 
+        console.log('[useChat:Lifecycle] 📥 /api/chat fallback response received:', {
+          status: fallbackRes.status,
+          statusText: fallbackRes.statusText,
+        });
 
         if (!fallbackRes.ok) {
           const errData = await fallbackRes.json().catch(() => ({}));
+          console.error('[useChat:Lifecycle] ❌ Fallback /api/chat failed:', errData);
           throw new Error(errData.error || `Chat request failed (${fallbackRes.statusText})`);
         }
 
         const data = await fallbackRes.json();
+        console.log('[useChat:Lifecycle] ✅ Blocking /api/chat succeeded with provider:', data.provider_used, 'preview:', data.message?.slice(0, 50));
 
         const assistantMessage: ChatMessage = {
           role: 'assistant',
@@ -229,12 +267,11 @@ export function useChat(): UseChatReturn {
 
       const decoder = new TextDecoder();
       let streamedContent = '';
-      let assistantMsgIndex = -1;
       let streamDone = false;
+      let chunkCount = 0;
 
       // Add placeholder assistant message
       setMessages((prev) => {
-        assistantMsgIndex = prev.length;
         return [...prev, { role: 'assistant', content: '' }];
       });
 
@@ -244,7 +281,10 @@ export function useChat(): UseChatReturn {
 
       while (!streamDone) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          console.log('[useChat:SSE] Stream reader signaled EOF (done=true)');
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -260,9 +300,12 @@ export function useChat(): UseChatReturn {
           let chunk: StreamChunk;
           try {
             chunk = JSON.parse(jsonStr);
-          } catch {
+          } catch (jsonErr) {
+            console.warn('[useChat:SSE] Error parsing SSE JSON line:', jsonStr, jsonErr);
             continue;
           }
+
+          chunkCount++;
 
           // Token — append to streaming content
           if (chunk.token) {
@@ -283,37 +326,58 @@ export function useChat(): UseChatReturn {
             setProviderUsed(chunk.provider_used);
           }
 
-          // Error
+          // Error received from stream
           if (chunk.error) {
+            console.error('[useChat:SSE] ❌ Stream error event received from server:', chunk.error);
             setError(chunk.error);
+            if (!streamedContent) {
+              streamedContent = `Apologies, sir. Neural link encountered an anomaly: ${chunk.error}`;
+              setMessages((prev) => {
+                const updated = [...prev];
+                const idx = updated.length - 1;
+                if (idx >= 0 && updated[idx].role === 'assistant') {
+                  updated[idx] = { ...updated[idx], content: streamedContent };
+                }
+                return updated;
+              });
+            }
           }
 
           // Done
           if (chunk.done) {
+            console.log('[useChat:SSE] ✅ Server signaled stream done event. Provider:', chunk.provider_used);
             streamDone = true;
             break;
           }
         }
       }
 
-      // Finalize: ensure the last message has the full content
-      if (streamedContent) {
-        setMessages((prev) => {
-          const updated = [...prev];
-          const idx = updated.length - 1;
-          if (idx >= 0 && updated[idx].role === 'assistant') {
-            updated[idx] = { ...updated[idx], content: streamedContent };
-          }
-          return updated;
-        });
+      // Fail-safe: ensure final message has non-empty content
+      if (!streamedContent.trim()) {
+        console.warn('[useChat:SSE] ⚠️ Stream ended with 0 content. Setting fallback response.');
+        streamedContent =
+          persona === 'friday'
+            ? 'All tactical systems online and listening, boss.'
+            : 'At your service, sir. All systems are operational.';
       }
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        const idx = updated.length - 1;
+        if (idx >= 0 && updated[idx].role === 'assistant') {
+          updated[idx] = { ...updated[idx], content: streamedContent };
+        }
+        return updated;
+      });
+
+      console.log(`[useChat:Lifecycle] 🏁 SSE Stream successfully finished. Total chunks: ${chunkCount}, length: ${streamedContent.length}`);
 
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
-        // User cancelled — don't treat as error
+        console.warn('[useChat:Lifecycle] ⚠️ Request aborted (AbortError) by controller');
         return;
       }
-      console.error('[useChat] Chat error:', err);
+      console.error('[useChat:Lifecycle] ❌ Chat error caught:', err);
       const errorMsg = err instanceof Error ? err.message : 'Error processing request';
       setError(errorMsg);
 

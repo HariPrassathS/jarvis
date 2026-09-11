@@ -21,10 +21,14 @@ import { checkEasterEgg } from '@/lib/llm/easter-eggs';
 import type { ChatMessage, VoicePersona, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
+  const reqStart = Date.now();
+  console.log('[Server:ChatBlocking] 🚀 Incoming /api/chat request received at', new Date().toISOString());
+
   try {
     // 1. Authenticate via verified Firebase ID Token (Zero Demo bypass)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
+      console.warn('[Server:ChatBlocking] ❌ Missing or malformed Authorization header');
       return NextResponse.json({ error: 'Unauthorized: Missing authentication token' }, { status: 401 });
     }
 
@@ -32,8 +36,9 @@ export async function POST(req: NextRequest) {
     let decoded;
     try {
       decoded = await verifyIdToken(idToken);
+      console.log(`[Server:ChatBlocking] 🔑 Token verified for UID: ${decoded.uid} (${decoded.email || 'no-email'})`);
     } catch (authErr) {
-      console.error('[Chat API] Token verification rejected:', authErr);
+      console.error('[Server:ChatBlocking] ❌ Token verification rejected:', authErr);
       return NextResponse.json({ error: 'Unauthorized: Invalid authentication session' }, { status: 401 });
     }
 
