@@ -135,27 +135,29 @@ export async function POST(req: NextRequest) {
     const lastUserMsg = contextualMessages[contextualMessages.length - 1];
     const priorHistory = contextualMessages.slice(0, -1);
 
-    // Conversation record assurance
+    // Conversation record assurance (non-blocking background execution)
     const convCacheKey = `conv:${conversationId}`;
     if (!jarvisCache.get(convCacheKey)) {
-      try {
-        const { data: existingConv } = await supabase
-          .from('conversations')
-          .select('id')
-          .eq('id', conversationId)
-          .maybeSingle();
+      jarvisCache.set(convCacheKey, true, 3600000);
+      Promise.resolve().then(async () => {
+        try {
+          const { data: existingConv } = await supabase
+            .from('conversations')
+            .select('id')
+            .eq('id', conversationId)
+            .maybeSingle();
 
-        if (!existingConv) {
-          await supabase.from('conversations').insert({
-            id: conversationId,
-            profile_id: profile.id,
-            title: lastUserMsg?.content?.slice(0, 80) || 'Active Dialogue',
-          });
+          if (!existingConv) {
+            await supabase.from('conversations').insert({
+              id: conversationId,
+              profile_id: profile.id,
+              title: lastUserMsg?.content?.slice(0, 80) || 'Active Dialogue',
+            });
+          }
+        } catch (convErr) {
+          console.warn('[Chat Stream API] Background conversation record check warning:', convErr);
         }
-        jarvisCache.set(convCacheKey, true, 3600000);
-      } catch (convErr) {
-        console.warn('[Chat Stream API] Conversation record check warning:', convErr);
-      }
+      }).catch(() => {});
     }
 
     // 5. Persist user message (non-blocking)

@@ -177,23 +177,6 @@ ${
   memories && memories.length > 0
     ? memories.map((m) => `- [${m.key}]: ${m.value}${m.mention_count && m.mention_count > 1 ? ` (referenced ${m.mention_count}x)` : ''}`).join('\n')
     : '(No prior long-term facts stored yet)'
-}
-
-## Recent conversation history:
-${
-  recentHistory && recentHistory.length > 0
-    ? recentHistory
-        .map((m) => {
-          const speaker =
-            m.role === 'user'
-              ? firstName || 'Operator'
-              : isFriday
-              ? 'F.R.I.D.A.Y'
-              : 'J.A.R.V.I.S';
-          return `- ${speaker}: ${m.content}`;
-        })
-        .join('\n')
-    : '(New session initiated — no prior turns in active conversation)'
 }`;
 
   return prompt;
