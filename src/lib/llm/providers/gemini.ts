@@ -121,6 +121,13 @@ function buildGeminiUserParts(message: ChatMessage): Array<Record<string, unknow
   return parts.length > 0 ? parts : [{ text: '' }];
 }
 
+// ──────────────────────────────────────────────
+// LLM Provider: Google Gemini (Priority 1)
+// Verified Models: gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro
+// ──────────────────────────────────────────────
+
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+
 export async function callGemini(
   messages: ChatMessage[],
   tools?: ToolDefinition[]
@@ -183,21 +190,6 @@ export async function callGemini(
     }
   }
 
-  // Build model config
-  const modelConfig: Parameters<typeof genAI.getGenerativeModel>[0] = {
-    model: 'gemini-2.5-flash',
-    generationConfig,
-    ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
-  };
-
-  if (tools && tools.length > 0) {
-    modelConfig.tools = [{
-      functionDeclarations: toGeminiFunctionDeclarations(tools),
-    }];
-  }
-
-  const model = genAI.getGenerativeModel(modelConfig);
-
   // Gemini history must alternate user -> model -> user -> model and end with model before sendMessage
   const validHistory: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = [];
   let expectedRole: 'user' | 'model' = 'user';
@@ -218,10 +210,6 @@ export async function callGemini(
     validHistory.pop();
   }
 
-  const chat = model.startChat({
-    history: validHistory as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
-  });
-
   const lastMessage = chatMessages[chatMessages.length - 1];
   let messagePartsToSend: any = '';
   if (lastMessage?.role === 'tool') {
@@ -230,58 +218,95 @@ export async function callGemini(
     messagePartsToSend = buildGeminiUserParts(lastMessage);
   }
 
-  let result;
-  try {
-    result = await chat.sendMessage(messagePartsToSend);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('Resource has been exhausted')) {
-      console.warn(`[Gemini Provider] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
-      keyCooldowns.set(key, Date.now() + 60000);
-    }
-    throw err;
-  }
-  const response = result.response;
-  const candidate = response.candidates?.[0];
+  let lastErr: any;
 
-  // Check for function calls
-  if (candidate?.content?.parts) {
-    const functionCallParts = candidate.content.parts.filter(
-      (p) => 'functionCall' in p && p.functionCall
-    );
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const modelConfig: Parameters<typeof genAI.getGenerativeModel>[0] = {
+        model: modelName,
+        generationConfig,
+        ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
+      };
 
-    if (functionCallParts.length > 0) {
-      const toolCalls = functionCallParts.map((p, i) => {
-        const fc = p.functionCall!;
-        return {
-          id: `gemini-tc-${i}-${Date.now()}`,
-          type: 'function' as const,
-          function: {
-            name: fc.name,
-            arguments: JSON.stringify(fc.args || {}),
-          },
-        };
+      if (tools && tools.length > 0) {
+        modelConfig.tools = [{
+          functionDeclarations: toGeminiFunctionDeclarations(tools),
+        }];
+      }
+
+      const model = genAI.getGenerativeModel(modelConfig);
+
+      const chat = model.startChat({
+        history: validHistory as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
       });
 
+      const result = await chat.sendMessage(messagePartsToSend);
+      const response = result.response;
+      const candidate = response.candidates?.[0];
+
+      // Check for function calls
+      if (candidate?.content?.parts) {
+        const functionCallParts = candidate.content.parts.filter(
+          (p) => 'functionCall' in p && p.functionCall
+        );
+
+        if (functionCallParts.length > 0) {
+          const toolCalls = functionCallParts.map((p, i) => {
+            const fc = p.functionCall!;
+            return {
+              id: `gemini-tc-${i}-${Date.now()}`,
+              type: 'function' as const,
+              function: {
+                name: fc.name,
+                arguments: JSON.stringify(fc.args || {}),
+              },
+            };
+          });
+
+          return {
+            content: '',
+            provider_used: 'gemini',
+            tool_calls: toolCalls,
+          };
+        }
+      }
+
+      let textContent = '';
+      try {
+        textContent = response.text() || '';
+      } catch {
+        const textPart = candidate?.content?.parts?.find((p) => 'text' in p);
+        textContent = (textPart as { text?: string })?.text || '';
+      }
+
       return {
-        content: '',
+        content: textContent,
         provider_used: 'gemini',
-        tool_calls: toolCalls,
       };
+    } catch (err: any) {
+      lastErr = err;
+      const isQuotaOrNotFound =
+        err?.status === 429 ||
+        err?.status === 404 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('not found') ||
+        err?.message?.includes('Resource has been exhausted');
+
+      if (isQuotaOrNotFound) {
+        console.warn(`[Gemini Provider] Model ${modelName} returned error (${err?.message}). Trying fallback model...`);
+        continue;
+      }
+      throw err;
     }
   }
 
-  let textContent = '';
-  try {
-    textContent = response.text() || '';
-  } catch {
-    const textPart = candidate?.content?.parts?.find((p) => 'text' in p);
-    textContent = (textPart as { text?: string })?.text || '';
+  if (lastErr?.status === 429 || lastErr?.message?.includes('429') || lastErr?.message?.includes('quota') || lastErr?.message?.includes('Resource has been exhausted')) {
+    console.warn(`[Gemini Provider] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
+    keyCooldowns.set(key, Date.now() + 60000);
   }
-
-  return {
-    content: textContent,
-    provider_used: 'gemini',
-  };
+  throw lastErr;
 }
 
 /**
@@ -350,21 +375,6 @@ export async function* streamGemini(
     }
   }
 
-  // Build model config
-  const modelConfig: Parameters<typeof genAI.getGenerativeModel>[0] = {
-    model: 'gemini-2.5-flash',
-    generationConfig,
-    ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
-  };
-
-  if (tools && tools.length > 0) {
-    modelConfig.tools = [{
-      functionDeclarations: toGeminiFunctionDeclarations(tools),
-    }];
-  }
-
-  const model = genAI.getGenerativeModel(modelConfig);
-
   // Validate history alternation (same logic as callGemini)
   const validHistory: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = [];
   let expectedRole: 'user' | 'model' = 'user';
@@ -385,10 +395,6 @@ export async function* streamGemini(
     validHistory.pop();
   }
 
-  const chat = model.startChat({
-    history: validHistory as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
-  });
-
   const lastMessage = chatMessages[chatMessages.length - 1];
   let messagePartsToSend: any = '';
   if (lastMessage?.role === 'tool') {
@@ -397,55 +403,92 @@ export async function* streamGemini(
     messagePartsToSend = buildGeminiUserParts(lastMessage);
   }
 
-  let streamResult;
-  try {
-    streamResult = await chat.sendMessageStream(messagePartsToSend);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota') || err?.message?.includes('Resource has been exhausted')) {
-      console.warn(`[Gemini Stream] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
-      keyCooldowns.set(key, Date.now() + 60000);
-    }
-    throw err;
-  }
+  let lastErr: any;
 
-  let accumulatedText = '';
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const modelConfig: Parameters<typeof genAI.getGenerativeModel>[0] = {
+        model: modelName,
+        generationConfig,
+        ...(systemMsg ? { systemInstruction: systemMsg.content } : {}),
+      };
 
-  let toolCallsDetected: StreamChunk['tool_calls'] | undefined;
-
-  for await (const chunk of streamResult.stream) {
-    const candidate = chunk.candidates?.[0];
-    if (!candidate?.content?.parts) continue;
-
-    // Check for function calls
-    const functionCallParts = candidate.content.parts.filter(
-      (p) => 'functionCall' in p && p.functionCall
-    );
-
-    if (functionCallParts.length > 0) {
-      toolCallsDetected = functionCallParts.map((p, i) => {
-        const fc = p.functionCall!;
-        return {
-          id: `gemini-tc-${i}-${Date.now()}`,
-          type: 'function' as const,
-          function: {
-            name: fc.name,
-            arguments: JSON.stringify(fc.args || {}),
-          },
-        };
-      });
-      // Tool calls end the stream — yield them and return
-      yield { tool_calls: toolCallsDetected, provider_used: 'gemini' };
-      return;
-    }
-
-    // Extract text deltas
-    for (const part of candidate.content.parts) {
-      if ('text' in part && part.text) {
-        accumulatedText += part.text;
-        yield { token: part.text as string };
+      if (tools && tools.length > 0) {
+        modelConfig.tools = [{
+          functionDeclarations: toGeminiFunctionDeclarations(tools),
+        }];
       }
+
+      const model = genAI.getGenerativeModel(modelConfig);
+
+      const chat = model.startChat({
+        history: validHistory as unknown as Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }>,
+      });
+
+      const streamResult = await chat.sendMessageStream(messagePartsToSend);
+
+      let accumulatedText = '';
+      let toolCallsDetected: StreamChunk['tool_calls'] | undefined;
+
+      for await (const chunk of streamResult.stream) {
+        const candidate = chunk.candidates?.[0];
+        if (!candidate?.content?.parts) continue;
+
+        // Check for function calls
+        const functionCallParts = candidate.content.parts.filter(
+          (p) => 'functionCall' in p && p.functionCall
+        );
+
+        if (functionCallParts.length > 0) {
+          toolCallsDetected = functionCallParts.map((p, i) => {
+            const fc = p.functionCall!;
+            return {
+              id: `gemini-tc-${i}-${Date.now()}`,
+              type: 'function' as const,
+              function: {
+                name: fc.name,
+                arguments: JSON.stringify(fc.args || {}),
+              },
+            };
+          });
+          // Tool calls end the stream — yield them and return
+          yield { tool_calls: toolCallsDetected, provider_used: 'gemini' };
+          return;
+        }
+
+        // Extract text deltas
+        for (const part of candidate.content.parts) {
+          if ('text' in part && part.text) {
+            accumulatedText += part.text;
+            yield { token: part.text as string };
+          }
+        }
+      }
+
+      yield { done: true, provider_used: 'gemini' };
+      return;
+    } catch (err: any) {
+      lastErr = err;
+      const isQuotaOrNotFound =
+        err?.status === 429 ||
+        err?.status === 404 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('not found') ||
+        err?.message?.includes('Resource has been exhausted');
+
+      if (isQuotaOrNotFound) {
+        console.warn(`[Gemini Stream] Model ${modelName} returned error (${err?.message}). Trying fallback model...`);
+        continue;
+      }
+      throw err;
     }
   }
 
-  yield { done: true, provider_used: 'gemini' };
+  if (lastErr?.status === 429 || lastErr?.message?.includes('429') || lastErr?.message?.includes('quota') || lastErr?.message?.includes('Resource has been exhausted')) {
+    console.warn(`[Gemini Stream] Key ...${key.slice(-4)} hit quota limit. Cooling down for 60s.`);
+    keyCooldowns.set(key, Date.now() + 60000);
+  }
+  throw lastErr;
 }

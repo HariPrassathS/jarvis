@@ -109,7 +109,12 @@ function getNextHealthyClient(): { client: Groq; key: string } {
   return { client, key: fallbackKey };
 }
 
-const GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
+const GROQ_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'mixtral-8x7b-32768',
+  'gemma2-9b-it',
+];
 
 export async function callGroq(
   messages: ChatMessage[],
@@ -152,13 +157,18 @@ export async function callGroq(
       };
     } catch (err: any) {
       lastErr = err;
-      const isRateLimit =
+      const isRateLimitOrNotFound =
         err?.status === 429 ||
+        err?.status === 404 ||
+        err?.status === 400 ||
         err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('400') ||
         err?.message?.includes('rate_limit') ||
+        err?.message?.includes('model') ||
         err?.message?.includes('quota');
-      if (isRateLimit) {
-        console.warn(`[Groq Provider] Model ${model} rate-limited. Trying fallback model in mesh...`);
+      if (isRateLimitOrNotFound) {
+        console.warn(`[Groq Provider] Model ${model} failed (${err?.message}). Trying fallback model in mesh...`);
         continue;
       }
       throw err;
@@ -261,13 +271,18 @@ export async function* streamGroq(
       return;
     } catch (err: any) {
       lastErr = err;
-      const isRateLimit =
+      const isRateLimitOrNotFound =
         err?.status === 429 ||
+        err?.status === 404 ||
+        err?.status === 400 ||
         err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('400') ||
         err?.message?.includes('rate_limit') ||
+        err?.message?.includes('model') ||
         err?.message?.includes('quota');
-      if (isRateLimit) {
-        console.warn(`[Groq Stream] Model ${model} rate-limited. Trying fallback model...`);
+      if (isRateLimitOrNotFound) {
+        console.warn(`[Groq Stream] Model ${model} failed (${err?.message}). Trying fallback model...`);
         continue;
       }
       throw err;

@@ -403,12 +403,8 @@ export default function Home() {
   // Voice recognition callback
   const handleSpeechComplete = useCallback(
     (text: string) => {
-      // 1. Hard suppression during active TTS playback
-      if (isSpeaking) {
-        console.warn('[EchoSuppression] 🛑 Dropping speech complete during active TTS playback:', text);
-        diagnosticLogger.log('speech', 'Suppressed speech complete: TTS actively speaking', { text });
-        return;
-      }
+      // 1. Immediately stop any active speech synthesis (barge-in / interruption)
+      stopSpeaking();
 
       // 2. Circuit breaker against self-echo
       if (lastAssistantResponseRef.current) {
@@ -424,11 +420,10 @@ export default function Home() {
         }
       }
 
-      stopSpeaking();
       sendMessage(text, persona);
       setSessionQueryCount((c) => c + 1);
     },
-    [sendMessage, stopSpeaking, persona, isSpeaking]
+    [sendMessage, stopSpeaking, persona]
   );
 
   // Barge-In callback

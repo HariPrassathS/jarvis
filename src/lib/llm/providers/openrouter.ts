@@ -78,8 +78,14 @@ function getNextHealthyClient(): { client: OpenAI; key: string } {
   return { client, key: fallbackKey };
 }
 
-// Active Free model on OpenRouter
-const FREE_MODEL = 'nex-agi/nex-n2.5-pro:free';
+// Active Free models on OpenRouter with multi-model fallback mesh
+const OPENROUTER_MODELS = [
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'google/gemini-2.0-flash-exp:free',
+  'deepseek/deepseek-r1:free',
+  'qwen/qwen-2.5-72b-instruct:free',
+  'mistralai/mistral-7b-instruct:free',
+];
 
 function toOpenAIMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
   return messages.map((m): ChatCompletionMessageParam => {
@@ -128,50 +134,69 @@ export async function callOpenRouter(
   tools?: ToolDefinition[]
 ): Promise<LLMResponse> {
   const openaiMessages = toOpenAIMessages(messages);
-
-  const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
-    model: FREE_MODEL,
-    messages: openaiMessages,
-    temperature: 0.7,
-    max_tokens: 2048,
-  };
-
-  if (tools && tools.length > 0) {
-    params.tools = tools as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming['tools'];
-    params.tool_choice = 'auto';
-  }
-
   const { client, key } = getNextHealthyClient();
 
-  let completion;
-  try {
-    completion = await client.chat.completions.create(params);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
-      console.warn(`[OpenRouter Provider] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
-      keyCooldowns.set(key, Date.now() + 60000);
+  let lastErr: any;
+
+  for (const model of OPENROUTER_MODELS) {
+    const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
+      model,
+      messages: openaiMessages,
+      temperature: 0.7,
+      max_tokens: 2048,
+    };
+
+    if (tools && tools.length > 0) {
+      params.tools = tools as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming['tools'];
+      params.tool_choice = 'auto';
     }
-    throw err;
+
+    try {
+      const completion = await client.chat.completions.create(params);
+      const choice = completion.choices[0];
+
+      // Narrow tool_calls to function tool calls only
+      const functionToolCalls = choice.message.tool_calls?.filter(
+        (tc): tc is ChatCompletionMessageFunctionToolCall => tc.type === 'function'
+      );
+
+      return {
+        content: choice.message.content || '',
+        provider_used: 'openrouter',
+        tool_calls: functionToolCalls?.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          },
+        })),
+      };
+    } catch (err: any) {
+      lastErr = err;
+      const isQuotaOrModelError =
+        err?.status === 429 ||
+        err?.status === 404 ||
+        err?.status === 400 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('rate limit') ||
+        err?.message?.includes('model');
+
+      if (isQuotaOrModelError) {
+        console.warn(`[OpenRouter Provider] Model ${model} failed (${err?.message}). Trying fallback model...`);
+        continue;
+      }
+      throw err;
+    }
   }
-  const choice = completion.choices[0];
 
-  // Narrow tool_calls to function tool calls only
-  const functionToolCalls = choice.message.tool_calls?.filter(
-    (tc): tc is ChatCompletionMessageFunctionToolCall => tc.type === 'function'
-  );
-
-  return {
-    content: choice.message.content || '',
-    provider_used: 'openrouter',
-    tool_calls: functionToolCalls?.map((tc) => ({
-      id: tc.id,
-      type: 'function' as const,
-      function: {
-        name: tc.function.name,
-        arguments: tc.function.arguments,
-      },
-    })),
-  };
+  if (lastErr?.status === 429 || lastErr?.message?.includes('429') || lastErr?.message?.includes('quota')) {
+    console.warn(`[OpenRouter Provider] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
+    keyCooldowns.set(key, Date.now() + 60000);
+  }
+  throw lastErr;
 }
 
 /**
@@ -182,82 +207,102 @@ export async function* streamOpenRouter(
   tools?: ToolDefinition[]
 ): AsyncGenerator<StreamChunk, void, unknown> {
   const openaiMessages = toOpenAIMessages(messages);
-
-  const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
-    model: FREE_MODEL,
-    messages: openaiMessages,
-    temperature: 0.7,
-    max_tokens: 2048,
-    stream: true,
-  };
-
-  if (tools && tools.length > 0) {
-    params.tools = tools as OpenAI.Chat.ChatCompletionCreateParamsStreaming['tools'];
-    params.tool_choice = 'auto';
-  }
-
   const { client, key } = getNextHealthyClient();
 
-  let stream;
-  try {
-    stream = await client.chat.completions.create(params);
-  } catch (err: any) {
-    if (err?.status === 429 || err?.message?.includes('429') || err?.message?.includes('quota')) {
-      console.warn(`[OpenRouter Stream] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
-      keyCooldowns.set(key, Date.now() + 60000);
+  let lastErr: any;
+
+  for (const model of OPENROUTER_MODELS) {
+    const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
+      model,
+      messages: openaiMessages,
+      temperature: 0.7,
+      max_tokens: 2048,
+      stream: true,
+    };
+
+    if (tools && tools.length > 0) {
+      params.tools = tools as OpenAI.Chat.ChatCompletionCreateParamsStreaming['tools'];
+      params.tool_choice = 'auto';
     }
-    throw err;
-  }
 
-  // Accumulate tool calls across chunks
-  const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
-  let hasToolCalls = false;
+    try {
+      const stream = await client.chat.completions.create(params);
 
-  for await (const chunk of stream) {
-    const delta = chunk.choices?.[0]?.delta;
-    if (!delta) continue;
+      // Accumulate tool calls across chunks
+      const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
+      let hasToolCalls = false;
 
-    // Handle tool call deltas
-    if (delta.tool_calls) {
-      hasToolCalls = true;
-      for (const tc of delta.tool_calls) {
-        const idx = tc.index;
-        if (!toolCallAccumulator[idx]) {
-          toolCallAccumulator[idx] = {
-            id: tc.id || `or-tc-${idx}-${Date.now()}`,
-            name: tc.function?.name || '',
-            arguments: '',
-          };
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        // Handle tool call deltas
+        if (delta.tool_calls) {
+          hasToolCalls = true;
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index;
+            if (!toolCallAccumulator[idx]) {
+              toolCallAccumulator[idx] = {
+                id: tc.id || `or-tc-${idx}-${Date.now()}`,
+                name: tc.function?.name || '',
+                arguments: '',
+              };
+            }
+            if (tc.function?.name) {
+              toolCallAccumulator[idx].name = tc.function.name;
+            }
+            if (tc.function?.arguments) {
+              toolCallAccumulator[idx].arguments += tc.function.arguments;
+            }
+          }
+          continue;
         }
-        if (tc.function?.name) {
-          toolCallAccumulator[idx].name = tc.function.name;
-        }
-        if (tc.function?.arguments) {
-          toolCallAccumulator[idx].arguments += tc.function.arguments;
+
+        // Handle text content deltas
+        if (delta.content) {
+          yield { token: delta.content };
         }
       }
-      continue;
-    }
 
-    // Handle text content deltas
-    if (delta.content) {
-      yield { token: delta.content };
+      // If tool calls were accumulated, yield them
+      if (hasToolCalls) {
+        const toolCalls = Object.values(toolCallAccumulator).map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: {
+            name: tc.name,
+            arguments: tc.arguments,
+          },
+        }));
+        yield { tool_calls: toolCalls, provider_used: 'openrouter' };
+        return;
+      }
+
+      yield { done: true, provider_used: 'openrouter' };
+      return;
+    } catch (err: any) {
+      lastErr = err;
+      const isQuotaOrModelError =
+        err?.status === 429 ||
+        err?.status === 404 ||
+        err?.status === 400 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('404') ||
+        err?.message?.includes('quota') ||
+        err?.message?.includes('rate limit') ||
+        err?.message?.includes('model');
+
+      if (isQuotaOrModelError) {
+        console.warn(`[OpenRouter Stream] Model ${model} failed (${err?.message}). Trying fallback model...`);
+        continue;
+      }
+      throw err;
     }
   }
 
-  // If tool calls were accumulated, yield them
-  if (hasToolCalls) {
-    const toolCalls = Object.values(toolCallAccumulator).map((tc) => ({
-      id: tc.id,
-      type: 'function' as const,
-      function: {
-        name: tc.name,
-        arguments: tc.arguments,
-      },
-    }));
-    yield { tool_calls: toolCalls, provider_used: 'openrouter' };
-    return;
+  if (lastErr?.status === 429 || lastErr?.message?.includes('429') || lastErr?.message?.includes('quota')) {
+    console.warn(`[OpenRouter Stream] Key ...${key.slice(-4)} hit rate limit. Cooling down for 60s.`);
+    keyCooldowns.set(key, Date.now() + 60000);
   }
-
-  yield { done: true, provider_used: 'openrouter' };
+  throw lastErr;
 }

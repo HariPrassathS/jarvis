@@ -67,7 +67,7 @@ J.A.R.V.I.S: "${cleanAssistant.replace(/"/g, '\\"')}"`;
     try {
       const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
       const completion = await groq.chat.completions.create({
-        model: 'openai/gpt-oss-120b',
+        model: 'llama-3.1-8b-instant',
         messages: [{ role: 'user', content: extractionPrompt }],
         temperature: 0.1,
         max_tokens: 350,
@@ -83,7 +83,7 @@ J.A.R.V.I.S: "${cleanAssistant.replace(/"/g, '\\"')}"`;
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 350,

@@ -123,6 +123,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   const personaRef = useRef<VoicePersona>(persona);
   personaRef.current = persona;
   const settleTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const activeUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   // Sentence queue for streaming TTS
   const sentenceQueueRef = useRef<string[]>([]);
@@ -175,6 +176,24 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
       }
     };
   }, [isSupported]);
+
+  // ── Liveness Watchdog: periodically recovers stale isSpeaking state if synthesis is dead ──
+  useEffect(() => {
+    if (!isSupported) return;
+    const interval = setInterval(() => {
+      if (
+        isSpeaking &&
+        !window.speechSynthesis.speaking &&
+        !window.speechSynthesis.pending &&
+        sentenceQueueRef.current.length === 0 &&
+        !isQueuePlayingRef.current
+      ) {
+        setIsSpeaking(false);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isSupported, isSpeaking]);
 
   // ── Select ranked voice according to active persona ──
   const selectVoice = useCallback((targetPersona: VoicePersona): SpeechSynthesisVoice | null => {
@@ -263,6 +282,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   /**
    * Internal: speak a single text chunk with persona-tuned acoustic delivery.
    * Returns a promise that resolves when the utterance finishes.
+   * Guaranteed to resolve via safety watchdog timer.
    */
   const speakChunk = useCallback(
     (text: string, effectivePersona: VoicePersona): Promise<void> => {
@@ -279,7 +299,16 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         }
 
         try {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
+
           const utterance = new SpeechSynthesisUtterance(cleaned);
+          activeUtteranceRef.current = utterance;
+          if (typeof window !== 'undefined') {
+            (window as any).__jarvisCurrentUtterance__ = utterance;
+          }
+
           const voice = selectVoice(effectivePersona);
 
           if (voice) {
@@ -297,12 +326,37 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
           utterance.volume = 1.0;
 
-          utterance.onend = () => resolve();
-          utterance.onerror = () => resolve(); // Resolve anyway to not block the queue
+          let isResolved = false;
+          let safetyTimer: NodeJS.Timeout | null = null;
+
+          const done = () => {
+            if (isResolved) return;
+            isResolved = true;
+            if (safetyTimer) {
+              clearTimeout(safetyTimer);
+              safetyTimer = null;
+            }
+            activeUtteranceRef.current = null;
+            resolve();
+          };
+
+          // Watchdog timer ensures the chunk queue NEVER hangs
+          const maxDurationMs = Math.min(15000, Math.max(3500, cleaned.length * 100));
+          safetyTimer = setTimeout(() => {
+            console.warn('[TTS] Chunk watchdog timeout triggered. Force-resolving chunk.');
+            done();
+          }, maxDurationMs);
+
+          utterance.onend = done;
+          utterance.onerror = (e) => {
+            console.warn('[TTS] Chunk synthesis error:', e);
+            done();
+          };
 
           window.speechSynthesis.speak(utterance);
         } catch (e: any) {
           console.warn('[TTS] Chunk playback error:', e);
+          activeUtteranceRef.current = null;
           resolve();
         }
       });
@@ -362,6 +416,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   const clearQueue = useCallback(() => {
     sentenceQueueRef.current = [];
     isQueuePlayingRef.current = false;
+    activeUtteranceRef.current = null;
   }, []);
 
   // ── Synthesize speech with persona-tuned acoustic delivery (full message, non-streaming) ──
@@ -379,8 +434,16 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         sentenceQueueRef.current = [];
         isQueuePlayingRef.current = false;
         window.speechSynthesis.cancel();
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
 
         const utterance = new SpeechSynthesisUtterance(cleaned);
+        activeUtteranceRef.current = utterance;
+        if (typeof window !== 'undefined') {
+          (window as any).__jarvisCurrentUtterance__ = utterance;
+        }
+
         const voice = selectVoice(effectivePersona);
 
         if (voice) {
@@ -413,12 +476,17 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
 
         setIsSpeaking(true);
 
-        utterance.onstart = () => {
-          setIsSpeaking(true);
-          diagnosticLogger.log('tts', 'Speech synthesis started');
-        };
+        let isCompleted = false;
+        let safetyTimer: NodeJS.Timeout | null = null;
 
-        utterance.onend = () => {
+        const finish = () => {
+          if (isCompleted) return;
+          isCompleted = true;
+          if (safetyTimer) {
+            clearTimeout(safetyTimer);
+            safetyTimer = null;
+          }
+          activeUtteranceRef.current = null;
           if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
           settleTimerRef.current = setTimeout(() => {
             setIsSpeaking(false);
@@ -426,11 +494,24 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
           }, 200);
         };
 
+        // Watchdog timer for full speech
+        const maxDurationMs = Math.min(30000, Math.max(4000, cleaned.length * 110));
+        safetyTimer = setTimeout(() => {
+          console.warn('[TTS] Full speech watchdog timeout triggered. Releasing speaking state.');
+          finish();
+        }, maxDurationMs);
+
+        utterance.onstart = () => {
+          setIsSpeaking(true);
+          diagnosticLogger.log('tts', 'Speech synthesis started');
+        };
+
+        utterance.onend = finish;
+
         utterance.onerror = (e) => {
           console.warn('[TTS] Synthesis error:', e);
           diagnosticLogger.log('tts', `Synthesis error: ${e.error || e}`);
-          if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
-          setIsSpeaking(false);
+          finish();
         };
 
         window.speechSynthesis.speak(utterance);
@@ -439,6 +520,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         diagnosticLogger.log('tts', `Playback exception: ${e?.message || e}`);
         if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
         setIsSpeaking(false);
+        activeUtteranceRef.current = null;
       }
     },
     [isSupported, selectVoice]
@@ -448,6 +530,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
     if (!isSupported) return;
     sentenceQueueRef.current = [];
     isQueuePlayingRef.current = false;
+    activeUtteranceRef.current = null;
     if (settleTimerRef.current) {
       clearTimeout(settleTimerRef.current);
       settleTimerRef.current = null;
