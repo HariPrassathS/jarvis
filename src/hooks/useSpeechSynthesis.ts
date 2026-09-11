@@ -9,6 +9,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { VoicePersona } from '@/types';
 import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
+import { latencyTracker } from '@/lib/debug/latency-tracker';
 
 interface UseSpeechSynthesisReturn {
   speak: (text: string, overridePersona?: VoicePersona) => void;
@@ -378,6 +379,11 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
             }
             utterance.volume = 1.0;
 
+            utterance.onstart = () => {
+              latencyTracker.markT5(cleaned);
+              setIsSpeaking(true);
+            };
+
             utterance.onend = done;
             utterance.onerror = (e) => {
               console.warn('[TTS] Chunk synthesis error:', e.error || e);
@@ -434,6 +440,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
     }
 
     isQueuePlayingRef.current = false;
+    latencyTracker.markT6();
 
     // Acoustic settling buffer after queue completes
     if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
@@ -494,6 +501,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
             safetyTimer = null;
           }
           activeUtteranceRef.current = null;
+          latencyTracker.markT6();
           if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
           settleTimerRef.current = setTimeout(() => {
             setIsSpeaking(false);
@@ -555,6 +563,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
           }, maxDurationMs);
 
           utterance.onstart = () => {
+            latencyTracker.markT5(cleaned);
             setIsSpeaking(true);
             diagnosticLogger.log('tts', 'Speech synthesis started');
           };

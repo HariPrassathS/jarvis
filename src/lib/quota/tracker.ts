@@ -171,11 +171,21 @@ class QuotaTracker {
    * Get all provider statuses
    */
   async getAllStatuses(): Promise<Record<string, ProviderStatus>> {
-    const providers = Object.keys(PROVIDER_QUOTAS);
-    const results = await Promise.all(providers.map((p) => this.getStatus(p)));
+    // Return local status immediately using in-memory tracker (zero-latency fast path)
     const statusMap: Record<string, ProviderStatus> = {};
-    for (const status of results) {
-      statusMap[status.provider] = status;
+    for (const p of Object.keys(PROVIDER_QUOTAS)) {
+      const config = PROVIDER_QUOTAS[p] || { dailyRequestLimit: 5000, warningThresholdPercent: 80 };
+      const local = this.getLocalRecord(p);
+      const percentUsed = Math.min(100, Math.round((local.requests / config.dailyRequestLimit) * 100));
+      statusMap[p] = {
+        provider: p as LLMProvider,
+        requestsToday: local.requests,
+        tokensToday: local.tokens,
+        dailyLimit: config.dailyRequestLimit,
+        percentUsed,
+        isDeprioritized: percentUsed >= config.warningThresholdPercent,
+        isExhausted: local.requests >= config.dailyRequestLimit,
+      };
     }
     return statusMap;
   }
@@ -186,6 +196,7 @@ class QuotaTracker {
    * 1. Primary provider (Groq / preferred) always handles traffic first for consistent sub-second latency
    * 2. Fallback providers (Gemini, OpenRouter, Cloudflare) are reserved as genuine emergency backups
    * 3. Exhausted providers (100% daily budget reached) are placed at the tail
+   * Zero-latency in-memory execution (<0.1ms).
    */
   async prioritizeProviders<T extends { name: string }>(
     providers: T[],

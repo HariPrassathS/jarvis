@@ -6,9 +6,10 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
+import { latencyTracker } from '@/lib/debug/latency-tracker';
 
 export interface UseSpeechRecognitionOptions {
-  onSpeechComplete?: (text: string) => void;
+  onSpeechComplete?: (text: string, t0?: number) => void;
   onBargeIn?: () => void;
   isSpeaking?: boolean;
   isLoading?: boolean;
@@ -201,11 +202,12 @@ export function useSpeechRecognition(
       stopEngine();
       if (accumulatedTextRef.current.trim() && onSpeechCompleteRef.current) {
         const text = accumulatedTextRef.current.trim();
+        const t0 = latencyTracker.markT0(text);
         accumulatedTextRef.current = '';
         setInterimTranscript('');
         setIsUserSpeaking(false);
         diagnosticLogger.log('speech', `Turn completed via touch stop: "${text}"`);
-        onSpeechCompleteRef.current(text);
+        onSpeechCompleteRef.current(text, t0);
       }
     } else {
       // User tapped to begin turn -> fresh user gesture satisfies mobile constraints
@@ -381,13 +383,14 @@ export function useSpeechRecognition(
           silenceTimeoutRef.current = setTimeout(() => {
             if (capturedSpoken.length > 1 && !isLoadingRef.current && !isMicKilledRef.current) {
               console.log('[Always-On Voice] 🎙️ Turn complete:', capturedSpoken);
+              const t0 = latencyTracker.markT0(capturedSpoken);
               diagnosticLogger.log('speech', `Turn complete: "${capturedSpoken}"`);
               accumulatedTextRef.current = '';
               setInterimTranscript('');
               setIsUserSpeaking(false);
 
               if (onSpeechCompleteRef.current) {
-                onSpeechCompleteRef.current(capturedSpoken);
+                onSpeechCompleteRef.current(capturedSpoken, t0);
               }
 
               // In tap-to-talk mode, stop recognition cleanly after turn completion

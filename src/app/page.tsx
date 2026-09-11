@@ -402,7 +402,7 @@ export default function Home() {
 
   // Voice recognition callback
   const handleSpeechComplete = useCallback(
-    (text: string) => {
+    (text: string, t0?: number) => {
       console.log('[Page:VoicePipeline] 🎙️ handleSpeechComplete received speech text:', text);
 
       // 1. Immediately stop any active speech synthesis (barge-in / interruption)
@@ -423,7 +423,7 @@ export default function Home() {
       }
 
       console.log('[Page:VoicePipeline] 📨 Forwarding to useChat sendMessage...');
-      sendMessage(text, persona);
+      sendMessage(text, persona, undefined, t0);
       setSessionQueryCount((c) => c + 1);
     },
     [sendMessage, stopSpeaking, persona]

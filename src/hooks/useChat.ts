@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { latencyTracker } from '@/lib/debug/latency-tracker';
 import type { ChatMessage, LLMProvider, VoicePersona, StreamChunk } from '@/types';
 
 const STORAGE_CONV_KEY = 'jarvis_active_conversation_id';
@@ -19,7 +20,12 @@ interface UseChatReturn {
   error: string | null;
   providerUsed: LLMProvider | null;
   conversationId: string | null;
-  sendMessage: (content: string, persona?: VoicePersona, attachments?: import('@/types').ChatAttachment[]) => Promise<void>;
+  sendMessage: (
+    content: string,
+    persona?: VoicePersona,
+    attachments?: import('@/types').ChatAttachment[],
+    t0?: number
+  ) => Promise<void>;
   clearChat: () => void;
   setInitialGreeting: (content: string) => void;
 }
@@ -121,136 +127,152 @@ export function useChat(): UseChatReturn {
   }, [user]);
 
   // ── Send user message with SSE streaming ──
-  const sendMessage = useCallback(async (content: string, persona?: VoicePersona, attachments?: import('@/types').ChatAttachment[]) => {
-    const currentUser = userRef.current;
-    const hasAttachments = Boolean(attachments && attachments.length > 0);
-    const trimmed = content.trim();
+  const sendMessage = useCallback(
+    async (
+      content: string,
+      persona?: VoicePersona,
+      attachments?: import('@/types').ChatAttachment[],
+      t0?: number
+    ) => {
+      const currentUser = userRef.current;
+      const hasAttachments = Boolean(attachments && attachments.length > 0);
+      const trimmed = content.trim();
 
-    console.log('[useChat:Lifecycle] 🎙️ sendMessage invoked:', {
-      content: trimmed,
-      persona,
-      hasAttachments,
-      hasUser: Boolean(currentUser),
-    });
-
-    if (!currentUser || (!trimmed && !hasAttachments)) {
-      console.warn('[useChat:Lifecycle] ⚠️ Aborted sendMessage: missing user or empty content', {
-        hasUser: Boolean(currentUser),
-        trimmedLength: trimmed.length,
-      });
-      return;
-    }
-
-    // Cancel any in-flight stream
-    if (abortRef.current) {
-      console.log('[useChat:Lifecycle] Aborting prior in-flight request controller');
-      abortRef.current.abort();
-    }
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-
-    // Default message text if attachments are provided without explicit prompt
-    const defaultContent = trimmed || (attachments?.some((a) => a.type === 'image')
-      ? 'Please analyze this visual telemetry, sir.'
-      : 'Please examine and summarize this document, sir.');
-
-    const userMessage: ChatMessage = {
-      role: 'user',
-      content: defaultContent,
-      attachments: hasAttachments ? attachments : undefined,
-    };
-    const currentMessages = messagesRef.current;
-    const updatedMessages = [...currentMessages, userMessage];
-
-    setMessages(updatedMessages);
-    setIsLoading(true);
-    setIsStreaming(false);
-    setError(null);
-
-    const payload = {
-      messages: updatedMessages.slice(-20),
-      conversation_id: conversationIdRef.current,
-      voice_persona: persona,
-    };
-
-    console.log('[useChat:Lifecycle] 📤 Firing fetch to /api/chat/stream with payload:', {
-      messagesCount: payload.messages.length,
-      lastMessage: defaultContent,
-      conversationId: payload.conversation_id,
-      persona: payload.voice_persona,
-    });
-
-    try {
-      const idToken = await currentUser.getIdToken();
-      const currentGoogleToken = googleTokenRef.current;
-
-      const requestHeaders: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`,
-      };
-      if (currentGoogleToken) {
-        requestHeaders['x-google-access-token'] = currentGoogleToken;
+      if (t0) {
+        latencyTracker.markT1();
+      } else {
+        latencyTracker.markT0(content);
+        latencyTracker.markT1();
       }
 
-      const res = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers: requestHeaders,
-        body: JSON.stringify(payload),
-        signal: abortController.signal,
+      console.log('[useChat:Lifecycle] 🎙️ sendMessage invoked:', {
+        content: trimmed,
+        persona,
+        hasAttachments,
+        hasUser: Boolean(currentUser),
       });
 
-      console.log('[useChat:Lifecycle] 📥 /api/chat/stream response received:', {
-        status: res.status,
-        statusText: res.statusText,
-        contentType: res.headers.get('content-type'),
-        convIdHeader: res.headers.get('X-Conversation-Id'),
-        personaHeader: res.headers.get('X-Voice-Persona'),
-      });
-
-      // If streaming endpoint returns non-200 or non-SSE, fall back to blocking
-      if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
-        console.warn('[useChat:Lifecycle] Streaming unavailable or non-SSE response. Falling back to blocking /api/chat...', {
-          status: res.status,
-          contentType: res.headers.get('content-type'),
+      if (!currentUser || (!trimmed && !hasAttachments)) {
+        console.warn('[useChat:Lifecycle] ⚠️ Aborted sendMessage: missing user or empty content', {
+          hasUser: Boolean(currentUser),
+          trimmedLength: trimmed.length,
         });
+        return;
+      }
 
-        const fallbackRes = await fetch('/api/chat', {
+      // Cancel any in-flight stream
+      if (abortRef.current) {
+        console.log('[useChat:Lifecycle] Aborting prior in-flight request controller');
+        abortRef.current.abort();
+      }
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      // Default message text if attachments are provided without explicit prompt
+      const defaultContent = trimmed || (attachments?.some((a) => a.type === 'image')
+        ? 'Please analyze this visual telemetry, sir.'
+        : 'Please examine and summarize this document, sir.');
+
+      const userMessage: ChatMessage = {
+        role: 'user',
+        content: defaultContent,
+        attachments: hasAttachments ? attachments : undefined,
+      };
+      const currentMessages = messagesRef.current;
+      const updatedMessages = [...currentMessages, userMessage];
+
+      setMessages(updatedMessages);
+      setIsLoading(true);
+      setIsStreaming(false);
+      setError(null);
+
+      const payload = {
+        messages: updatedMessages.slice(-20),
+        conversation_id: conversationIdRef.current,
+        voice_persona: persona,
+      };
+
+      console.log('[useChat:Lifecycle] 📤 Firing fetch to /api/chat/stream with payload:', {
+        messagesCount: payload.messages.length,
+        lastMessage: defaultContent,
+        conversationId: payload.conversation_id,
+        persona: payload.voice_persona,
+      });
+
+      try {
+        const idToken = await currentUser.getIdToken();
+        const currentGoogleToken = googleTokenRef.current;
+
+        const requestHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        };
+        if (currentGoogleToken) {
+          requestHeaders['x-google-access-token'] = currentGoogleToken;
+        }
+
+        latencyTracker.markT2();
+        const res = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: requestHeaders,
           body: JSON.stringify(payload),
           signal: abortController.signal,
         });
 
-        console.log('[useChat:Lifecycle] 📥 /api/chat fallback response received:', {
-          status: fallbackRes.status,
-          statusText: fallbackRes.statusText,
+        console.log('[useChat:Lifecycle] 📥 /api/chat/stream response received:', {
+          status: res.status,
+          statusText: res.statusText,
+          contentType: res.headers.get('content-type'),
+          convIdHeader: res.headers.get('X-Conversation-Id'),
+          personaHeader: res.headers.get('X-Voice-Persona'),
         });
 
-        if (!fallbackRes.ok) {
-          const errData = await fallbackRes.json().catch(() => ({}));
-          console.error('[useChat:Lifecycle] ❌ Fallback /api/chat failed:', errData);
-          throw new Error(errData.error || `Chat request failed (${fallbackRes.statusText})`);
-        }
+        // If streaming endpoint returns non-200 or non-SSE, fall back to blocking
+        if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
+          console.warn('[useChat:Lifecycle] Streaming unavailable or non-SSE response. Falling back to blocking /api/chat...', {
+            status: res.status,
+            contentType: res.headers.get('content-type'),
+          });
 
-        const data = await fallbackRes.json();
-        console.log('[useChat:Lifecycle] ✅ Blocking /api/chat succeeded with provider:', data.provider_used, 'preview:', data.message?.slice(0, 50));
+          const fallbackRes = await fetch('/api/chat', {
+            method: 'POST',
+            headers: requestHeaders,
+            body: JSON.stringify(payload),
+            signal: abortController.signal,
+          });
 
-        const assistantMessage: ChatMessage = {
-          role: 'assistant',
-          content: data.message,
-        };
+          console.log('[useChat:Lifecycle] 📥 /api/chat fallback response received:', {
+            status: fallbackRes.status,
+            statusText: fallbackRes.statusText,
+          });
 
-        setMessages((prev) => [...prev, assistantMessage]);
-        setProviderUsed(data.provider_used);
-
-        if (data.conversation_id) {
-          setConversationId(data.conversation_id);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(STORAGE_CONV_KEY, data.conversation_id);
+          if (!fallbackRes.ok) {
+            const errData = await fallbackRes.json().catch(() => ({}));
+            console.error('[useChat:Lifecycle] ❌ Fallback /api/chat failed:', errData);
+            throw new Error(errData.error || `Chat request failed (${fallbackRes.statusText})`);
           }
+
+          const data = await fallbackRes.json();
+          latencyTracker.markT3(data.provider_used);
+          latencyTracker.markT4(data.provider_used);
+          console.log('[useChat:Lifecycle] ✅ Blocking /api/chat succeeded with provider:', data.provider_used, 'preview:', data.message?.slice(0, 50));
+
+          const assistantMessage: ChatMessage = {
+            role: 'assistant',
+            content: data.message,
+          };
+
+          setMessages((prev) => [...prev, assistantMessage]);
+          setProviderUsed(data.provider_used);
+
+          if (data.conversation_id) {
+            setConversationId(data.conversation_id);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(STORAGE_CONV_KEY, data.conversation_id);
+            }
+          }
+          return;
         }
-        return;
-      }
 
       // Extract conversation metadata from response headers
       const convId = res.headers.get('X-Conversation-Id');
@@ -309,6 +331,7 @@ export function useChat(): UseChatReturn {
 
           // Token — append to streaming content
           if (chunk.token) {
+            latencyTracker.markT3(chunk.provider_used || undefined);
             streamedContent += chunk.token;
             // Update the assistant message in-place
             setMessages((prev) => {
@@ -345,6 +368,7 @@ export function useChat(): UseChatReturn {
 
           // Done
           if (chunk.done) {
+            latencyTracker.markT4(chunk.provider_used || undefined);
             console.log('[useChat:SSE] ✅ Server signaled stream done event. Provider:', chunk.provider_used);
             streamDone = true;
             break;
