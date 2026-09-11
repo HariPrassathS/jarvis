@@ -122,6 +122,8 @@ export default function HudOverlay({
               className={`px-2 sm:px-2.5 py-1 rounded-full text-[8.5px] sm:text-[9.5px] font-mono tracking-wider uppercase font-semibold flex items-center gap-1.5 transition-all duration-200 cursor-pointer ${
                 isMicKilled
                   ? 'bg-red-950/90 border border-red-500 text-red-300 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse'
+                  : isFriday
+                  ? 'bg-black/80 border border-rose-500/40 text-rose-300 hover:border-rose-400 hover:bg-rose-500/10 shadow-[0_0_10px_rgba(244,63,94,0.15)]'
                   : 'bg-black/80 border border-[#4DE8E8]/30 text-[#4DE8E8] hover:border-[#4DE8E8]/80 hover:bg-[#4DE8E8]/10'
               }`}
               title={
@@ -133,7 +135,7 @@ export default function HudOverlay({
             >
               <div
                 className={`w-2 h-2 rounded-full ${
-                  isMicKilled ? 'bg-red-400 animate-ping' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                  isMicKilled ? 'bg-red-400 animate-ping' : isFriday ? 'bg-rose-400 shadow-[0_0_6px_#fb7185]' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
                 }`}
               />
               <span>{isMicKilled ? 'MIC KILLED' : 'MIC ACTIVE'}</span>
@@ -142,7 +144,7 @@ export default function HudOverlay({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
               ) : (
-                <svg className="w-3.5 h-3.5 text-[#4DE8E8]/70 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-3.5 h-3.5 flex-shrink-0 ${isFriday ? 'text-rose-300/80' : 'text-[#4DE8E8]/70'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                 </svg>
               )}
@@ -152,7 +154,9 @@ export default function HudOverlay({
           {/* Dual Persona Switch */}
           {onPersonaChange && (
             <div
-              className="flex items-center bg-black/80 border border-[#4DE8E8]/25 rounded-full p-0.5 backdrop-blur-xl shadow-[0_0_15px_rgba(0,0,0,0.8)]"
+              className={`flex items-center bg-black/80 border rounded-full p-0.5 backdrop-blur-xl shadow-[0_0_15px_rgba(0,0,0,0.8)] ${
+                isFriday ? 'border-amber-400/35 shadow-[0_0_15px_rgba(244,63,94,0.15)]' : 'border-[#4DE8E8]/25'
+              }`}
               title="Voice Persona Matrix: Switch between JARVIS (Butler) & FRIDAY (Tactical). Browser-native synthesis."
             >
               <button
@@ -213,12 +217,15 @@ export default function HudOverlay({
             <motion.button
               onClick={onOpenPrivacyModal}
               whileTap={{ scale: 0.94 }}
-              className="text-[9.5px] sm:text-[10px] font-mono tracking-wider text-white/60 hover:text-[#4DE8E8] active:text-[#4DE8E8]
-                        transition-colors uppercase cursor-pointer py-1.5 px-1.5 sm:px-1 flex items-center gap-1"
+              className={`text-[9.5px] sm:text-[10px] font-mono tracking-wider transition-colors uppercase cursor-pointer py-1.5 px-1.5 sm:px-1 flex items-center gap-1 ${
+                isFriday
+                  ? 'text-white/60 hover:text-rose-300 active:text-rose-300'
+                  : 'text-white/60 hover:text-[#4DE8E8] active:text-[#4DE8E8]'
+              }`}
               title="Open Privacy & Data Governance (Export Data, Forget Everything)"
               aria-label="Privacy and Data Governance"
             >
-              <svg className="w-3.5 h-3.5 text-[#4DE8E8]/80 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-3.5 h-3.5 flex-shrink-0 ${isFriday ? 'text-rose-400/80' : 'text-[#4DE8E8]/80'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
               <span className="hidden md:inline">DATA &amp; PRIVACY</span>
@@ -233,13 +240,16 @@ export default function HudOverlay({
             <motion.button
               onClick={onNewChat}
               whileTap={{ scale: 0.94 }}
-              className="text-[9.5px] sm:text-[10.5px] font-mono tracking-wider text-white/60 hover:text-[#4DE8E8] active:text-[#4DE8E8]
-                        transition-colors uppercase cursor-pointer py-1.5 px-1.5 sm:px-1"
+              className={`text-[9.5px] sm:text-[10.5px] font-mono tracking-wider transition-colors uppercase cursor-pointer py-1.5 px-1.5 sm:px-1 ${
+                isFriday
+                  ? 'text-white/60 hover:text-amber-300 active:text-amber-300'
+                  : 'text-white/60 hover:text-[#4DE8E8] active:text-[#4DE8E8]'
+              }`}
               aria-label="Start new chat"
             >
               <span className="hidden sm:inline">NEW CHAT</span>
               <span className="sm:hidden flex items-center gap-1">
-                <span className="text-[#4DE8E8]">+</span> NEW
+                <span className={isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'}>+</span> NEW
               </span>
             </motion.button>
           )}

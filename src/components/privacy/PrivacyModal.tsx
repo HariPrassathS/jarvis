@@ -202,8 +202,10 @@ export default function PrivacyModal({
           <div className="space-y-4 sm:space-y-5 mt-4">
             {/* 1. Privacy Standards Overview */}
             <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10 text-[10.5px] font-mono text-white/70 leading-relaxed">
-              <div className="flex items-center gap-1.5 text-[#4DE8E8] font-semibold uppercase tracking-wider mb-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#4DE8E8]" />
+              <div className={`flex items-center gap-1.5 font-semibold uppercase tracking-wider mb-1 ${
+                isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isFriday ? 'bg-amber-400' : 'bg-[#4DE8E8]'}`} />
                 <span>Zero Telemetry Policy</span>
               </div>
               <p>
@@ -212,7 +214,9 @@ export default function PrivacyModal({
             </div>
 
             {/* 2. Self-Serve Data Export Section */}
-            <div className="p-3.5 sm:p-4 rounded-xl bg-black/60 border border-[#4DE8E8]/20 space-y-2.5">
+            <div className={`p-3.5 sm:p-4 rounded-xl bg-black/60 border space-y-2.5 ${
+              isFriday ? 'border-amber-400/20' : 'border-[#4DE8E8]/20'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-white">

@@ -17,6 +17,12 @@
   --sar: env(safe-area-inset-right, 0px);
 }
 
+[data-persona="friday"] {
+  --jarvis-cyan: #FB7185;
+  --jarvis-cyan-glow: rgba(244, 63, 94, 0.45);
+  --jarvis-grid-color: rgba(244, 63, 94, 0.045);
+}
+
 /* Base */
 html,
 body {
@@ -166,9 +172,27 @@ body {
   will-change: transform, opacity;
 }
 
+.hud-scan-sweep-friday {
+  animation: hud-scan-glide 7.5s ease-in-out infinite;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(244, 63, 94, 0.04) 40%,
+    rgba(251, 113, 133, 0.20) 50%,
+    rgba(244, 63, 94, 0.04) 60%,
+    transparent 100%
+  );
+  will-change: transform, opacity;
+}
+
 /* Selection */
 ::selection {
   background: rgba(77, 232, 232, 0.35);
+  color: #ffffff;
+}
+
+[data-persona="friday"] ::selection {
+  background: rgba(244, 63, 94, 0.4);
   color: #ffffff;
 }
 

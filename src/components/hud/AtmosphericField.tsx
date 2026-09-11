@@ -6,6 +6,7 @@
 // ──────────────────────────────────────────────
 
 import { useEffect, useRef } from 'react';
+import type { VoicePersona } from '@/types';
 
 interface Particle {
   x: number;
@@ -22,10 +23,12 @@ interface Particle {
 
 interface AtmosphericFieldProps {
   mode?: 'landing' | 'active';
+  persona?: VoicePersona;
 }
 
-export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldProps) {
+export default function AtmosphericField({ mode = 'active', persona = 'jarvis' }: AtmosphericFieldProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isFriday = persona === 'friday';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,6 +61,10 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
     const particles: Particle[] = Array.from({ length: particleCount }, () => {
       const isAltColor = mode === 'active' && Math.random() > 0.8;
       const baseAlpha = mode === 'active' ? 0.08 + Math.random() * 0.22 : 0.04 + Math.random() * 0.12;
+      const color = isFriday
+        ? isAltColor ? '251, 191, 36' : '244, 63, 94'
+        : isAltColor ? '192, 38, 211' : '77, 232, 232';
+
       return {
         x: Math.random() * width,
         y: Math.random() * height,
@@ -68,7 +75,7 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
         maxAlpha: baseAlpha + 0.15,
         swaySpeed: 0.001 + Math.random() * 0.002,
         swayOffset: Math.random() * Math.PI * 2,
-        color: isAltColor ? '192, 38, 211' : '77, 232, 232',
+        color,
       };
     });
 
@@ -133,7 +140,7 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
       window.removeEventListener('resize', handleResize);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [mode]);
+  }, [mode, isFriday]);
 
   return (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -146,14 +153,18 @@ export default function AtmosphericField({ mode = 'active' }: AtmosphericFieldPr
       />
 
       {/* 2. Low-frequency horizontal scanline radar sweep (every 7s) */}
-      <div className="hud-scan-sweep absolute inset-x-0 h-36 pointer-events-none opacity-40" />
+      <div className={`${isFriday ? 'hud-scan-sweep-friday' : 'hud-scan-sweep'} absolute inset-x-0 h-36 pointer-events-none opacity-40`} />
 
-      {/* 3. Volumetric dark edge vignette */}
+      {/* 3. Volumetric dark edge vignette & persona tactical border ambiance */}
       <div
-        className="absolute inset-0 pointer-events-none"
+        className="absolute inset-0 pointer-events-none transition-all duration-700"
         style={{
-          background:
-            'radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.95) 100%)',
+          background: isFriday
+            ? 'radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(20,2,6,0.5) 75%, rgba(0,0,0,0.96) 100%)'
+            : 'radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0,0,0,0.55) 75%, rgba(0,0,0,0.95) 100%)',
+          boxShadow: isFriday
+            ? 'inset 0 0 70px rgba(244, 63, 94, 0.25), inset 0 0 140px rgba(159, 18, 57, 0.15)'
+            : 'inset 0 0 70px rgba(77, 232, 232, 0.12), inset 0 0 140px rgba(8, 145, 178, 0.08)',
         }}
       />
     </div>

@@ -22,6 +22,7 @@ interface AudioSentryToggleProps {
   isTapToTalk?: boolean;
   modeReason?: string | null;
   isBackgrounded?: boolean;
+  persona?: 'jarvis' | 'friday';
   onTapToTalk?: () => void;
   onToggleMute: () => void;
 }
@@ -39,9 +40,11 @@ export default function AudioSentryToggle({
   isTapToTalk = false,
   modeReason,
   isBackgrounded = false,
+  persona = 'jarvis',
   onTapToTalk,
   onToggleMute,
 }: AudioSentryToggleProps) {
+  const isFriday = persona === 'friday';
   if (!isSupported || permissionStatus === 'unsupported') {
     return (
       <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/80 border border-red-500/40 text-[10.5px] font-mono text-red-400">
@@ -67,11 +70,13 @@ export default function AudioSentryToggle({
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -5 }}
-          className="px-3.5 py-1 rounded-full bg-black/85 border border-[#4DE8E8]/40
-                     backdrop-blur-md shadow-[0_0_20px_rgba(77,232,232,0.2)]
-                     text-[11px] font-mono text-[#4DE8E8] flex items-center gap-2 max-w-[280px] sm:max-w-md text-center"
+          className={`px-3.5 py-1 rounded-full bg-black/85 border backdrop-blur-md text-[11px] font-mono flex items-center gap-2 max-w-[280px] sm:max-w-md text-center ${
+            isFriday
+              ? 'border-rose-500/40 shadow-[0_0_20px_rgba(244,63,94,0.25)] text-rose-300'
+              : 'border-[#4DE8E8]/40 shadow-[0_0_20px_rgba(77,232,232,0.2)] text-[#4DE8E8]'
+          }`}
         >
-          <div className="w-1.5 h-1.5 rounded-full bg-[#4DE8E8] animate-ping flex-shrink-0" />
+          <div className={`w-1.5 h-1.5 rounded-full animate-ping flex-shrink-0 ${isFriday ? 'bg-rose-400' : 'bg-[#4DE8E8]'}`} />
           <span className="truncate">&ldquo;{interimTranscript}&rdquo;</span>
         </motion.div>
       )}
@@ -102,17 +107,19 @@ export default function AudioSentryToggle({
                         backdrop-blur-xl transition-all duration-200 cursor-pointer select-none ${
                           isListening
                             ? 'bg-red-950/80 border-red-500/80 text-red-200 shadow-[0_0_25px_rgba(239,68,68,0.4)] animate-pulse'
+                            : isFriday
+                            ? 'bg-black/90 border-rose-500/50 text-rose-300 hover:border-rose-400 hover:shadow-[0_0_20px_rgba(244,63,94,0.35)] active:bg-rose-500/20'
                             : 'bg-black/90 border-[#4DE8E8]/50 text-[#4DE8E8] hover:border-[#4DE8E8] hover:shadow-[0_0_20px_rgba(77,232,232,0.3)] active:bg-[#4DE8E8]/20'
                         }`}
-            aria-label={isListening ? 'Stop recording and send' : 'Tap to speak to JARVIS'}
+            aria-label={isListening ? 'Stop recording and send' : isFriday ? 'Tap to speak to FRIDAY' : 'Tap to speak to JARVIS'}
           >
-            <div className={`w-2.5 h-2.5 rounded-full ${isListening ? 'bg-red-400 animate-ping' : 'bg-[#4DE8E8]'}`} />
+            <div className={`w-2.5 h-2.5 rounded-full ${isListening ? 'bg-red-400 animate-ping' : isFriday ? 'bg-rose-400' : 'bg-[#4DE8E8]'}`} />
             <span>{isListening ? 'LISTENING... [TAP TO SEND]' : 'TAP TO SPEAK'}</span>
             <svg className="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
             </svg>
           </motion.button>
-          <span className="text-[9.5px] font-mono text-[#4DE8E8]/50 tracking-wider uppercase">
+          <span className={`text-[9.5px] font-mono tracking-wider uppercase ${isFriday ? 'text-rose-400/50' : 'text-[#4DE8E8]/50'}`}>
             {modeReason || 'Tap-to-talk mode active'}
           </span>
         </div>
@@ -126,20 +133,22 @@ export default function AudioSentryToggle({
                       backdrop-blur-xl transition-all duration-200 cursor-pointer select-none min-h-[38px] ${
                         isMuted
                           ? 'bg-black/90 border-red-500/30 text-red-300/80 hover:border-red-400/60 hover:shadow-[0_0_20px_rgba(239,68,68,0.2)]'
+                          : isFriday
+                          ? 'bg-black/85 border-rose-500/35 text-rose-300/85 hover:text-rose-200 hover:border-rose-400/70 hover:shadow-[0_0_22px_rgba(244,63,94,0.35)]'
                           : 'bg-black/85 border-[#4DE8E8]/35 text-[#4DE8E8]/85 hover:text-[#4DE8E8] hover:border-[#4DE8E8]/70 hover:shadow-[0_0_22px_rgba(77,232,232,0.3)]'
                       }`}
           aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
         >
-          {/* Living Indicator: Independent 2s cycle dual-pulse green dot */}
+          {/* Living Indicator: Independent 2s cycle dual-pulse dot */}
           <div className="relative flex items-center justify-center w-2.5 h-2.5 flex-shrink-0">
             <div
               className={`w-2 h-2 rounded-full transition-colors ${
-                isMuted ? 'bg-red-400' : 'bg-emerald-400'
+                isMuted ? 'bg-red-400' : isFriday ? 'bg-rose-400' : 'bg-emerald-400'
               }`}
             />
             {!isMuted && (
               <motion.div
-                className="absolute inset-0 rounded-full border border-emerald-400"
+                className={`absolute inset-0 rounded-full border ${isFriday ? 'border-rose-400' : 'border-emerald-400'}`}
                 animate={{
                   scale: [1, 2.2, 1],
                   opacity: [0.8, 0, 0.8],
@@ -152,12 +161,12 @@ export default function AudioSentryToggle({
               />
             )}
             {!isMuted && (
-              <div className="absolute inset-0 rounded-full bg-emerald-400/40 blur-[2px]" />
+              <div className={`absolute inset-0 rounded-full blur-[2px] ${isFriday ? 'bg-rose-400/40' : 'bg-emerald-400/40'}`} />
             )}
           </div>
 
           {/* Status Pill Text */}
-          <span className="uppercase tracking-[0.16em] transition-colors group-hover:text-[#4DE8E8]">
+          <span className={`uppercase tracking-[0.16em] transition-colors ${isFriday ? 'group-hover:text-rose-200' : 'group-hover:text-[#4DE8E8]'}`}>
             {isMuted ? 'ALWAYS-ON VOICE [MUTED]' : 'ALWAYS-ON VOICE [ACTIVE]'}
           </span>
 
@@ -174,7 +183,7 @@ export default function AudioSentryToggle({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
               </svg>
             ) : (
-              <svg className="w-3.5 h-3.5 text-[#4DE8E8]/70 group-hover:text-[#4DE8E8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-3.5 h-3.5 transition-colors ${isFriday ? 'text-rose-400/80 group-hover:text-rose-200' : 'text-[#4DE8E8]/70 group-hover:text-[#4DE8E8]'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"

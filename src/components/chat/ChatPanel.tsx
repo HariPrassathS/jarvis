@@ -178,17 +178,23 @@ export default function ChatPanel({
             animate={{ height: 380, opacity: 1, y: 0 }}
             exit={{ height: 0, opacity: 0, y: 20 }}
             transition={{ duration: 0.35, ease: 'easeInOut' }}
-            className="pointer-events-auto w-full max-w-3xl mb-3 bg-black/95 border border-[#4DE8E8]/30
-                       rounded-2xl backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.9),0_0_30px_rgba(77,232,232,0.1)]
-                       overflow-hidden flex flex-col max-h-[55dvh]"
+            className={`pointer-events-auto w-full max-w-3xl mb-3 bg-black/95 border rounded-2xl backdrop-blur-2xl overflow-hidden flex flex-col max-h-[55dvh] ${
+              isFriday
+                ? 'border-rose-500/35 shadow-[0_-10px_40px_rgba(0,0,0,0.9),0_0_30px_rgba(244,63,94,0.18)]'
+                : 'border-[#4DE8E8]/30 shadow-[0_-10px_40px_rgba(0,0,0,0.9),0_0_30px_rgba(77,232,232,0.1)]'
+            }`}
           >
             {/* Drawer Header Tabs */}
-            <div className="flex items-center justify-between px-3 sm:px-5 py-2 border-b border-[#4DE8E8]/20 bg-[#4DE8E8]/5">
+            <div className={`flex items-center justify-between px-3 sm:px-5 py-2 border-b ${
+              isFriday ? 'border-rose-500/20 bg-rose-950/20' : 'border-[#4DE8E8]/20 bg-[#4DE8E8]/5'
+            }`}>
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <img
                   src="/jarvis-friday-logo.png"
                   alt="JARVIS & FRIDAY Emblem"
-                  className="w-5 h-5 rounded-full object-cover border border-white/30 mr-0.5 flex-shrink-0 shadow-[0_0_8px_rgba(77,232,232,0.3)]"
+                  className={`w-5 h-5 rounded-full object-cover border border-white/30 mr-0.5 flex-shrink-0 ${
+                    isFriday ? 'shadow-[0_0_8px_rgba(244,63,94,0.4)]' : 'shadow-[0_0_8px_rgba(77,232,232,0.3)]'
+                  }`}
                 />
                 <button
                   type="button"
@@ -196,8 +202,8 @@ export default function ChatPanel({
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-mono tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
                     drawerTab === 'transcript'
                       ? isFriday
-                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(251,191,36,0.2)]'
-                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)]'
+                        ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 shadow-[0_0_10px_rgba(244,63,94,0.25)] font-semibold'
+                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)] font-semibold'
                       : 'text-white/50 hover:text-white/80 border border-transparent'
                   }`}
                 >
@@ -205,7 +211,7 @@ export default function ChatPanel({
                     className={`w-1.5 h-1.5 rounded-full ${
                       drawerTab === 'transcript'
                         ? isFriday
-                          ? 'bg-amber-400 animate-pulse'
+                          ? 'bg-rose-400 animate-pulse'
                           : 'bg-[#4DE8E8] animate-pulse'
                         : 'bg-white/30'
                     }`}
@@ -222,14 +228,16 @@ export default function ChatPanel({
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-mono tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
                     drawerTab === 'vault'
                       ? isFriday
-                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(251,191,36,0.2)]'
-                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)]'
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(251,191,36,0.2)] font-semibold'
+                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)] font-semibold'
                       : 'text-white/50 hover:text-white/80 border border-transparent'
                   }`}
                 >
                   <span>📁 VAULT / ATTACHMENTS</span>
                   {vaultFiles.length > 0 && (
-                    <span className="text-[10px] px-1 rounded bg-[#4DE8E8]/20 text-[#4DE8E8] font-bold">
+                    <span className={`text-[10px] px-1 rounded font-bold ${
+                      isFriday ? 'bg-rose-500/20 text-rose-300' : 'bg-[#4DE8E8]/20 text-[#4DE8E8]'
+                    }`}>
                       {vaultFiles.length}
                     </span>
                   )}
@@ -242,7 +250,9 @@ export default function ChatPanel({
                     type="button"
                     onClick={loadVault}
                     disabled={isVaultLoading}
-                    className="text-[10px] font-mono text-[#4DE8E8]/70 hover:text-[#4DE8E8] transition-colors p-1 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    className={`text-[10px] font-mono transition-colors p-1 flex items-center gap-1 cursor-pointer disabled:opacity-50 ${
+                      isFriday ? 'text-rose-300/70 hover:text-rose-200' : 'text-[#4DE8E8]/70 hover:text-[#4DE8E8]'
+                    }`}
                     title="Refresh stored files databank"
                   >
                     <span className={isVaultLoading ? 'animate-spin inline-block' : ''}>⟳</span>
@@ -251,7 +261,9 @@ export default function ChatPanel({
                 )}
                 <button
                   onClick={onToggle}
-                  className="text-[11px] font-mono text-[#4DE8E8]/70 hover:text-[#4DE8E8] active:text-[#4DE8E8] transition-colors cursor-pointer uppercase tracking-wider p-1"
+                  className={`text-[11px] font-mono transition-colors cursor-pointer uppercase tracking-wider p-1 ${
+                    isFriday ? 'text-rose-400 hover:text-white' : 'text-[#4DE8E8]/70 hover:text-[#4DE8E8]'
+                  }`}
                   aria-label="Close drawer"
                 >
                   CLOSE [✕]
@@ -275,9 +287,13 @@ export default function ChatPanel({
                 className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 space-y-3.5 scrollbar-thin"
               >
                 {messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-40 text-center text-[#4DE8E8]/40 text-xs font-mono space-y-2">
-                    <div className="w-8 h-8 rounded-full border border-dashed border-[#4DE8E8]/30 flex items-center justify-center">
-                      <span className="text-[#4DE8E8]/60">✦</span>
+                  <div className={`flex flex-col items-center justify-center h-40 text-center text-xs font-mono space-y-2 ${
+                    isFriday ? 'text-rose-300/40' : 'text-[#4DE8E8]/40'
+                  }`}>
+                    <div className={`w-8 h-8 rounded-full border border-dashed flex items-center justify-center ${
+                      isFriday ? 'border-rose-500/30' : 'border-[#4DE8E8]/30'
+                    }`}>
+                      <span className={isFriday ? 'text-rose-300/60' : 'text-[#4DE8E8]/60'}>✦</span>
                     </div>
                     <p>Neural transcript buffer empty. Speak aloud, enter a command, or drop an image/document.</p>
                   </div>
@@ -315,23 +331,29 @@ export default function ChatPanel({
                         <div
                           className={`max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 rounded-xl text-xs leading-relaxed font-mono ${
                             msg.role === 'user'
-                              ? 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
+                              ? isFriday
+                                ? 'bg-rose-500/15 text-rose-100 border border-rose-500/35'
+                                : 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
+                              : isFriday
+                              ? 'bg-white/[0.03] text-white/90 border border-rose-500/20 shadow-[0_0_15px_rgba(244,63,94,0.06)]'
                               : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
                           }`}
                         >
                           <div
                             className={`text-[9px] uppercase mb-1.5 tracking-wider font-semibold ${
                               msg.role === 'user'
-                                ? 'text-[#4DE8E8]/50'
+                                ? isFriday
+                                  ? 'text-rose-300/60'
+                                  : 'text-[#4DE8E8]/50'
                                 : isFriday
-                                ? 'text-amber-300/70'
+                                ? 'text-amber-300/80'
                                 : 'text-[#4DE8E8]/50'
                             }`}
                           >
                             {msg.role === 'user'
                               ? 'USER'
                               : isFriday
-                              ? 'FRIDAY CORE'
+                              ? 'FRIDAY TACTICAL'
                               : 'JARVIS CORE'}
                           </div>
 
@@ -344,7 +366,11 @@ export default function ChatPanel({
                                     <div
                                       key={att.id}
                                       onClick={() => setSelectedImage({ url: att.dataUrl!, name: att.name, size: att.size })}
-                                      className="group/img relative rounded-lg overflow-hidden border border-[#4DE8E8]/35 bg-black/70 p-1.5 shadow-[0_0_15px_rgba(0,255,255,0.08)] cursor-pointer hover:border-[#4DE8E8] transition-all"
+                                      className={`group/img relative rounded-lg overflow-hidden border bg-black/70 p-1.5 cursor-pointer transition-all ${
+                                        isFriday
+                                          ? 'border-rose-500/35 hover:border-rose-400 shadow-[0_0_15px_rgba(244,63,94,0.08)]'
+                                          : 'border-[#4DE8E8]/35 hover:border-[#4DE8E8] shadow-[0_0_15px_rgba(0,255,255,0.08)]'
+                                      }`}
                                       title="Click to expand visual telemetry"
                                     >
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -353,7 +379,9 @@ export default function ChatPanel({
                                         alt={att.name}
                                         className="max-h-52 sm:max-h-64 w-auto max-w-full rounded object-contain mx-auto block group-hover/img:scale-[1.01] transition-transform duration-200"
                                       />
-                                      <div className="flex items-center justify-between px-2 py-1 bg-black/70 backdrop-blur-md text-[9px] font-mono text-[#4DE8E8]/90 mt-1.5 rounded">
+                                      <div className={`flex items-center justify-between px-2 py-1 bg-black/70 backdrop-blur-md text-[9px] font-mono mt-1.5 rounded ${
+                                        isFriday ? 'text-rose-300/90' : 'text-[#4DE8E8]/90'
+                                      }`}>
                                         <span className="truncate max-w-[200px] flex items-center gap-1">
                                           <span>📷</span>
                                           <span>{att.name}</span>
@@ -606,40 +634,45 @@ export default function ChatPanel({
         )}
       </AnimatePresence>
 
-      {/* ── Staged Attachment Chips Strip (Directly Above Input Bar) ── */}
+      {/* ── Staged Attachments Preview Chips Above Input ── */}
       <AnimatePresence>
         {allStaged.length > 0 && (
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: 8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            exit={{ opacity: 0, y: 8, scale: 0.95 }}
             transition={{ duration: 0.2 }}
-            className="pointer-events-auto w-full max-w-3xl mb-2 flex items-center gap-2 overflow-x-auto py-1 px-2 scrollbar-none"
+            className="w-full max-w-3xl mb-2 flex flex-wrap gap-2 pointer-events-auto px-1"
           >
             {allStaged.map((att) => (
               <div
                 key={att.id}
-                className="flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-black/85 border border-[#4DE8E8]/40 backdrop-blur-xl
-                           shadow-[0_0_15px_rgba(77,232,232,0.12)] text-[11px] font-mono text-cyan-200 flex-shrink-0 select-none"
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-full border backdrop-blur-xl text-[11px] font-mono flex-shrink-0 select-none ${
+                  isFriday
+                    ? 'bg-rose-950/85 border-rose-500/40 shadow-[0_0_15px_rgba(244,63,94,0.18)] text-rose-200'
+                    : 'bg-black/85 border-[#4DE8E8]/40 shadow-[0_0_15px_rgba(77,232,232,0.12)] text-cyan-200'
+                }`}
               >
                 {att.type === 'image' && att.dataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={att.dataUrl}
                     alt={att.name}
-                    className="w-5 h-5 rounded object-cover border border-[#4DE8E8]/40"
+                    className={`w-5 h-5 rounded object-cover border ${isFriday ? 'border-rose-400/40' : 'border-[#4DE8E8]/40'}`}
                   />
                 ) : (
                   <span className="text-xs">{att.mimeType === 'application/pdf' ? '📑' : '📄'}</span>
                 )}
                 <span className="truncate max-w-[140px] sm:max-w-[200px]">{att.name}</span>
-                <span className="text-[9px] text-[#4DE8E8]/60">
+                <span className={`text-[9px] ${isFriday ? 'text-rose-400/70' : 'text-[#4DE8E8]/60'}`}>
                   {att.pageCount ? `${att.pageCount}p • ` : ''}{Math.round(att.size / 1024)}KB
                 </span>
                 <button
                   type="button"
                   onClick={() => handleRemoveAttachment(att.id)}
-                  className="ml-1 text-[#4DE8E8]/60 hover:text-red-400 transition-colors cursor-pointer font-bold px-1"
+                  className={`ml-1 transition-colors cursor-pointer font-bold px-1 ${
+                    isFriday ? 'text-rose-400/70 hover:text-white' : 'text-[#4DE8E8]/60 hover:text-red-400'
+                  }`}
                   title="Remove attachment"
                   aria-label="Remove attachment"
                 >
@@ -660,10 +693,11 @@ export default function ChatPanel({
       >
         <form
           onSubmit={handleSubmit}
-          className="relative flex items-center bg-black/90 border border-[#4DE8E8]/30 rounded-full
-                     backdrop-blur-2xl shadow-[0_0_25px_rgba(0,0,0,0.9),0_0_15px_rgba(77,232,232,0.08)]
-                     px-1.5 sm:px-2 py-1 sm:py-1.5 focus-within:border-[#4DE8E8]/85 focus-within:shadow-[0_0_32px_rgba(77,232,232,0.28)]
-                     transition-all duration-300 min-h-[46px]"
+          className={`relative flex items-center bg-black/90 border rounded-full backdrop-blur-2xl px-1.5 sm:px-2 py-1 sm:py-1.5 transition-all duration-300 min-h-[46px] ${
+            isFriday
+              ? 'border-rose-500/35 shadow-[0_0_25px_rgba(0,0,0,0.9),0_0_15px_rgba(244,63,94,0.12)] focus-within:border-rose-400 focus-within:shadow-[0_0_32px_rgba(244,63,94,0.32)]'
+              : 'border-[#4DE8E8]/30 shadow-[0_0_25px_rgba(0,0,0,0.9),0_0_15px_rgba(77,232,232,0.08)] focus-within:border-[#4DE8E8]/85 focus-within:shadow-[0_0_32px_rgba(77,232,232,0.28)]'
+          }`}
         >
           {/* Hidden File Inputs */}
           <input
@@ -689,19 +723,23 @@ export default function ChatPanel({
             onClick={onToggle}
             whileTap={{ scale: 0.95 }}
             aria-label="Toggle live transcript log"
-            className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-mono uppercase tracking-wider
-                       bg-[#4DE8E8]/10 text-[#4DE8E8]/80 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/20 border border-[#4DE8E8]/30
-                       transition-all cursor-pointer flex-shrink-0 select-none min-h-[38px] whitespace-nowrap"
+            className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-mono uppercase tracking-wider transition-all cursor-pointer flex-shrink-0 select-none min-h-[38px] whitespace-nowrap border ${
+              isFriday
+                ? 'bg-rose-500/15 text-rose-300 hover:text-white hover:bg-rose-500/25 border-rose-500/40'
+                : 'bg-[#4DE8E8]/10 text-[#4DE8E8]/80 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/20 border-[#4DE8E8]/30'
+            }`}
           >
             <span className="hidden sm:inline">TRANSCRIPT</span>
             <span className="sm:hidden">LOG</span>
-            <span className="w-4 h-4 rounded-full bg-[#4DE8E8] text-black font-bold text-[9px] flex items-center justify-center flex-shrink-0">
+            <span className={`w-4 h-4 rounded-full font-bold text-[9px] flex items-center justify-center flex-shrink-0 ${
+              isFriday ? 'bg-rose-500 text-white shadow-[0_0_6px_rgba(244,63,94,0.6)]' : 'bg-[#4DE8E8] text-black'
+            }`}>
               {messages.length}
             </span>
             <svg
-              className={`w-3 h-3 text-[#4DE8E8] transition-transform duration-300 ${
-                isExpanded ? 'rotate-180' : ''
-              }`}
+              className={`w-3 h-3 transition-transform duration-300 ${
+                isFriday ? 'text-rose-300' : 'text-[#4DE8E8]'
+              } ${isExpanded ? 'rotate-180' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -718,7 +756,11 @@ export default function ChatPanel({
             whileTap={{ scale: 0.92 }}
             title="Upload image for visual analysis (PNG/JPG/WebP)"
             aria-label="Upload image for vision analysis"
-            className="flex items-center justify-center w-8 h-8 rounded-full text-[#4DE8E8]/80 hover:text-white hover:bg-[#4DE8E8]/20 border border-transparent hover:border-[#4DE8E8]/40 transition-all flex-shrink-0 cursor-pointer ml-1 disabled:opacity-40"
+            className={`flex items-center justify-center w-8 h-8 rounded-full border border-transparent transition-all flex-shrink-0 cursor-pointer ml-1 disabled:opacity-40 ${
+              isFriday
+                ? 'text-rose-400/80 hover:text-white hover:bg-rose-500/20 hover:border-rose-400/40'
+                : 'text-[#4DE8E8]/80 hover:text-white hover:bg-[#4DE8E8]/20 hover:border-[#4DE8E8]/40'
+            }`}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
@@ -734,10 +776,16 @@ export default function ChatPanel({
             whileTap={{ scale: 0.92 }}
             title="Attach document (PDF/text/code)"
             aria-label="Attach document"
-            className="flex items-center justify-center w-8 h-8 rounded-full text-[#4DE8E8]/70 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/15 border border-transparent hover:border-[#4DE8E8]/30 transition-all flex-shrink-0 cursor-pointer disabled:opacity-40"
+            className={`flex items-center justify-center w-8 h-8 rounded-full border border-transparent transition-all flex-shrink-0 cursor-pointer disabled:opacity-40 ${
+              isFriday
+                ? 'text-rose-400/70 hover:text-rose-300 hover:bg-rose-500/15 hover:border-rose-400/30'
+                : 'text-[#4DE8E8]/70 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/15 hover:border-[#4DE8E8]/30'
+            }`}
           >
             {isExtracting ? (
-              <span className="w-3.5 h-3.5 border-2 border-[#4DE8E8] border-t-transparent rounded-full animate-spin" />
+              <span className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                isFriday ? 'border-rose-400' : 'border-[#4DE8E8]'
+              }`} />
             ) : (
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -772,14 +820,18 @@ export default function ChatPanel({
             type="submit"
             disabled={isLoading || isExtracting || (!input.trim() && allStaged.length === 0)}
             whileTap={{ scale: 0.94 }}
-            className="group flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs font-mono font-medium uppercase tracking-wider
-                       text-[#4DE8E8]/80 hover:text-white hover:bg-[#4DE8E8]/20 active:bg-[#4DE8E8]/30 disabled:opacity-30 disabled:cursor-not-allowed
-                       transition-all duration-200 cursor-pointer flex-shrink-0 min-h-[38px]"
-            aria-label="Send message to JARVIS"
+            className={`group flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs font-mono font-medium uppercase tracking-wider disabled:opacity-30 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer flex-shrink-0 min-h-[38px] ${
+              isFriday
+                ? 'text-rose-300/90 hover:text-white hover:bg-rose-500/20 active:bg-rose-500/30'
+                : 'text-[#4DE8E8]/80 hover:text-white hover:bg-[#4DE8E8]/20 active:bg-[#4DE8E8]/30'
+            }`}
+            aria-label={isFriday ? 'Send message to FRIDAY' : 'Send message to JARVIS'}
           >
             <span className="transition-colors group-hover:text-white">SEND</span>
             <svg
-              className="w-3.5 h-3.5 text-[#4DE8E8] transition-all duration-200 group-hover:translate-x-1 group-hover:text-white"
+              className={`w-3.5 h-3.5 transition-all duration-200 group-hover:translate-x-1 group-hover:text-white ${
+                isFriday ? 'text-rose-400' : 'text-[#4DE8E8]'
+              }`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

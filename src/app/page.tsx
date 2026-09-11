@@ -803,9 +803,12 @@ export default function Home() {
   const isHudActive = narrativePhase === 'phase5_online';
 
   return (
-    <div className="min-h-screen min-h-dvh h-dvh bg-black hud-grid-overlay relative overflow-hidden flex flex-col justify-between select-none">
+    <div
+      data-persona={persona}
+      className="min-h-screen min-h-dvh h-dvh bg-black hud-grid-overlay relative overflow-hidden flex flex-col justify-between select-none"
+    >
       {/* ── Dynamic Cinematic Atmospheric Field ── */}
-      <AtmosphericField mode={isLandingMode || isSelectionMode ? 'landing' : 'active'} />
+      <AtmosphericField mode={isLandingMode || isSelectionMode ? 'landing' : 'active'} persona={persona} />
 
       {/* ═══ HUD OVERLAY (TOP BAR & VIEWFINDFERS) — Animates in during Phase 4 & 5 ═══ */}
       <AnimatePresence>
@@ -1098,6 +1101,7 @@ export default function Home() {
                 {/* Audio Sentry Status Pill */}
                 <div className="mt-2 sm:mt-2.5 flex items-center justify-center">
                   <AudioSentryToggle
+                    persona={persona}
                     isListening={isListening}
                     isUserSpeaking={isUserSpeaking}
                     isMuted={isMuted}
@@ -1140,9 +1144,9 @@ export default function Home() {
                       }`}
                     />
                     <span>{persona === 'friday' ? 'FRIDAY.ONLINE' : isTapToTalk ? 'VOICE.TOUCH' : 'SYS.ACTIVE'}</span>
-                    <span className="text-[#4DE8E8]/20">|</span>
+                    <span className={persona === 'friday' ? 'text-amber-400/20' : 'text-[#4DE8E8]/20'}>|</span>
                     <span className="hidden sm:inline">{isTapToTalk ? 'IOS.GUARD' : 'VAD.AUTO'}</span>
-                    <span className="hidden sm:inline text-[#4DE8E8]/20">|</span>
+                    <span className={`hidden sm:inline ${persona === 'friday' ? 'text-amber-400/20' : 'text-[#4DE8E8]/20'}`}>|</span>
                     <span>44.1kHz</span>
                   </span>
                   <div
