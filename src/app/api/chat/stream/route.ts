@@ -175,24 +175,50 @@ export async function POST(req: NextRequest) {
       ).catch(() => {});
 
       if (lastUserMsg.attachments && lastUserMsg.attachments.length > 0) {
-        for (const att of lastUserMsg.attachments) {
-          const payload = att.dataUrl || att.extractedText || '';
-          if (payload) {
-            Promise.resolve(
-              uploadUserFile(
-                profileUid,
-                att.id || crypto.randomUUID(),
-                att.name,
-                payload,
-                att.mimeType
-              )
-            )
-              .then(({ storagePath }) => {
+        // Upload attachments in parallel and insert initial metadata records immediately
+        await Promise.all(
+          lastUserMsg.attachments.map(async (att) => {
+            const payload = att.dataUrl || att.extractedText || '';
+            let finalStoragePath = att.storagePath;
+            if (payload && !finalStoragePath) {
+              try {
+                const { storagePath } = await uploadUserFile(
+                  profileUid,
+                  att.id || crypto.randomUUID(),
+                  att.name,
+                  payload,
+                  att.mimeType
+                );
+                finalStoragePath = storagePath;
                 att.storagePath = storagePath;
-              })
-              .catch((upErr) => console.warn('[Chat Stream API] File storage warning:', upErr));
-          }
-        }
+              } catch (upErr) {
+                console.warn('[Chat Stream API] File storage warning:', upErr);
+                finalStoragePath = `${profileUid}/${att.id}-${att.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                att.storagePath = finalStoragePath;
+              }
+            }
+
+            // Immediately register the file in uploaded_files table so any concurrent or immediate recall works
+            try {
+              const initialDescription = att.extractedText
+                ? `Extracted text from "${att.name}" (${att.pageCount ? att.pageCount + ' pages, ' : ''}${Math.round(att.size / 1024)}KB):\n${att.extractedText.slice(0, 3000)}`
+                : `Uploaded ${att.type === 'image' ? 'visual telemetry / photo' : 'file'} "${att.name}" (${Math.round(att.size / 1024)}KB). Ingested into Stark vault.`;
+
+              await insertUploadedFile({
+                profile_id: profile.id,
+                conversation_id: conversationId,
+                storage_path: finalStoragePath || `${profileUid}/${att.id}-${att.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`,
+                file_type: att.type,
+                original_filename: att.name,
+                mime_type: att.mimeType,
+                file_size_bytes: att.size,
+                ai_description: initialDescription,
+              });
+            } catch (initMetaErr) {
+              console.warn('[Chat Stream API] Initial file metadata record warning:', initMetaErr);
+            }
+          })
+        );
       }
     }
 

@@ -37,10 +37,19 @@ export async function uploadUserFile(
     if (base64Index !== -1) {
       buffer = Buffer.from(data.slice(base64Index + 8), 'base64');
     } else {
-      buffer = Buffer.from(data);
+      buffer = Buffer.from(data, 'utf-8');
     }
   } else if (typeof data === 'string') {
-    buffer = Buffer.from(data, 'base64');
+    const isBase64 = /^[A-Za-z0-9+/=]+$/.test(data.trim()) && data.length % 4 === 0 && data.length > 20;
+    if (isBase64) {
+      try {
+        buffer = Buffer.from(data, 'base64');
+      } catch {
+        buffer = Buffer.from(data, 'utf-8');
+      }
+    } else {
+      buffer = Buffer.from(data, 'utf-8');
+    }
   } else {
     throw new Error('Unsupported upload data payload');
   }

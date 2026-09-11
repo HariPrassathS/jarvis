@@ -148,6 +148,10 @@ export default function Home() {
   // ── Multi-Modal Drag-and-Drop & File Staging State ──
   const [isOrbReceiving, setIsOrbReceiving] = useState(false);
   const [stagedAttachments, setStagedAttachments] = useState<ChatAttachment[]>([]);
+  const stagedAttachmentsRef = useRef<ChatAttachment[]>([]);
+  useEffect(() => {
+    stagedAttachmentsRef.current = stagedAttachments;
+  }, [stagedAttachments]);
 
   // ── Privacy & Data Governance Modal State ──
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
@@ -422,8 +426,15 @@ export default function Home() {
         }
       }
 
-      console.log('[Page:VoicePipeline] 📨 Forwarding to useChat sendMessage...');
-      sendMessage(text, persona, undefined, t0);
+      const currentStaged = stagedAttachmentsRef.current;
+      const attachmentsToSend = currentStaged.length > 0 ? currentStaged : undefined;
+      console.log('[Page:VoicePipeline] 📨 Forwarding to useChat sendMessage...', {
+        attachmentsCount: currentStaged.length,
+      });
+      sendMessage(text, persona, attachmentsToSend, t0);
+      if (currentStaged.length > 0) {
+        setStagedAttachments([]);
+      }
       setSessionQueryCount((c) => c + 1);
     },
     [sendMessage, stopSpeaking, persona]

@@ -97,7 +97,7 @@ export default function ChatPanel({
     }
   }, [isExpanded, drawerTab, loadVault]);
 
-  // Handle file picker selection
+  // Handle file picker selection — Automatic AI Recognition & Vault Ingestion
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -110,10 +110,16 @@ export default function ChatPanel({
         const att = await processUploadedFile(files[i]);
         extracted.push(att);
       }
-      if (onAddStagedAttachments) {
-        onAddStagedAttachments(extracted);
-      } else {
-        setLocalAttachments((prev) => [...prev, ...extracted]);
+
+      if (extracted.length > 0) {
+        // Automatically trigger AI Recognition and Vault Ingestion
+        const promptToSend = input.trim();
+        onSend(promptToSend, extracted);
+        setInput('');
+        setLocalAttachments([]);
+        if (onRemoveStagedAttachment) {
+          extracted.forEach((a) => onRemoveStagedAttachment(a.id));
+        }
       }
     } catch (err: any) {
       console.error('[ChatPanel] Error extracting attachments:', err);

@@ -14,6 +14,17 @@ export interface FileQueryFilters {
   limit?: number;
 }
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'that', 'this', 'those', 'these', 'i', 'me', 'my', 'we', 'our',
+  'you', 'your', 'he', 'she', 'it', 'they', 'have', 'had', 'has', 'having', 'uploaded',
+  'upload', 'uploads', 'file', 'files', 'document', 'documents', 'image', 'images',
+  'photo', 'photos', 'picture', 'pictures', 'what', 'was', 'were', 'is', 'are', 'in',
+  'on', 'at', 'to', 'for', 'from', 'with', 'about', 'show', 'tell', 'find', 'get',
+  'recall', 'remember', 'check', 'look', 'up', 'please', 'can', 'could', 'would'
+]);
+
 // In-memory resilient cache fallback store keyed by profile_id
 const fallbackStore = new Map<string, UploadedFileRecord[]>();
 
@@ -24,10 +35,14 @@ export async function insertUploadedFile(
   record: Omit<UploadedFileRecord, 'id' | 'uploaded_at'> & { id?: string; uploaded_at?: string }
 ): Promise<UploadedFileRecord> {
   const profileId = record.profile_id;
+  const rawId = record.id;
+  const validId = rawId && UUID_REGEX.test(rawId) ? rawId : crypto.randomUUID();
+  const validConvId = record.conversation_id && UUID_REGEX.test(record.conversation_id) ? record.conversation_id : null;
+
   const newRecord: UploadedFileRecord = {
-    id: record.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `file-${Date.now()}`),
+    id: validId,
     profile_id: profileId,
-    conversation_id: record.conversation_id || null,
+    conversation_id: validConvId,
     storage_path: record.storage_path,
     file_type: record.file_type,
     original_filename: record.original_filename,
@@ -46,7 +61,7 @@ export async function insertUploadedFile(
     const supabase = createServerSupabaseClient();
     const { data, error } = await supabase
       .from('uploaded_files')
-      .insert({
+      .upsert({
         id: newRecord.id,
         profile_id: newRecord.profile_id,
         conversation_id: newRecord.conversation_id,
@@ -139,12 +154,38 @@ export async function getUploadedFiles(
 
   // 3. Filter by keyword query (matches in filename, ai_description, or file_type)
   if (filters?.query && filters.query.trim()) {
-    const q = filters.query.toLowerCase().trim();
-    const tokens = q.split(/\s+/).filter((t) => t.length > 1);
-    results = results.filter((f) => {
-      const target = `${f.original_filename || ''} ${f.ai_description || ''} ${f.file_type || ''}`.toLowerCase();
-      return target.includes(q) || (tokens.length > 0 && tokens.some((token) => target.includes(token)));
-    });
+    const rawQuery = filters.query.toLowerCase().trim();
+    const allTokens = rawQuery.split(/[\s,._\-?!]+/).filter((t) => t.length > 0);
+    const meaningfulTokens = allTokens.filter((t) => !STOP_WORDS.has(t));
+
+    // If query is specifically asking for pdf/image/presentation/etc.
+    const isPdfQuery = allTokens.includes('pdf');
+    const isImageQuery = allTokens.some((t) => ['image', 'photo', 'picture', 'screenshot', 'scan'].includes(t));
+
+    if (meaningfulTokens.length > 0 || isPdfQuery || isImageQuery) {
+      results = results.filter((f) => {
+        const name = (f.original_filename || '').toLowerCase();
+        const desc = (f.ai_description || '').toLowerCase();
+        const mime = (f.mime_type || '').toLowerCase();
+        const type = (f.file_type || '').toLowerCase();
+        const target = `${name} ${desc} ${mime} ${type}`;
+
+        if (isPdfQuery && (name.endsWith('.pdf') || mime.includes('pdf') || type === 'document')) {
+          return true;
+        }
+
+        if (isImageQuery && (type === 'image' || mime.startsWith('image/'))) {
+          return true;
+        }
+
+        // Match against meaningful tokens
+        return (
+          target.includes(rawQuery) ||
+          meaningfulTokens.some((token) => target.includes(token))
+        );
+      });
+    }
+    // If all tokens were stop words (e.g. "what was the file I uploaded"), return all recent files
   }
 
   if (filters?.limit && filters.limit > 0) {

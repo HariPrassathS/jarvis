@@ -195,14 +195,14 @@ export const toolDefinitions: ToolDefinition[] = [
     function: {
       name: 'recall_uploaded_files',
       description:
-        'Retrieve and recall past uploaded images, photos, visual telemetry scans, or documents previously shared by the operator. Use when the user asks about a photo, screenshot, image, or document sent earlier (e.g. "what was in that photo I sent yesterday?", "the document from earlier", "that screenshot"). Returns stored AI descriptions and metadata.',
+        'Retrieve and recall past uploaded images, photos, visual telemetry scans, documents, PDFs, or presentations previously shared by the operator. Use when the user asks about a photo, screenshot, image, PDF, or document sent earlier (e.g. "pdf that I have uploaded", "what was in that photo I sent yesterday?", "the document from earlier", "that screenshot", "my files in vault"). Returns stored AI descriptions and metadata.',
       parameters: {
         type: 'object',
         properties: {
           query: {
             type: 'string',
             description:
-              'Optional search term or keyword to find relevant files by filename or content description (e.g. "radar", "schematic", "receipt", "screenshot", "flight manual")',
+              'Optional search term or keyword to find relevant files by filename or content description (e.g. "pdf", "radar", "schematic", "receipt", "screenshot", "flight manual", "finalppt")',
           },
           file_type: {
             type: 'string',
