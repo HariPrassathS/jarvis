@@ -87,16 +87,13 @@ export default function HudOverlay({
               LVL {clearanceLevel}
             </span>
           )}
-        </div>
 
-        {/* Centered Top: Persona Badge Title (Desktop only) */}
-        <div className="hidden lg:flex absolute left-1/2 -translate-x-1/2 items-center pointer-events-none">
           <span
-            className={`text-[11px] font-mono tracking-[0.32em] uppercase font-normal select-none transition-colors duration-300 ${
-              isFriday ? 'text-amber-300/60 shadow-[0_0_15px_rgba(251,191,36,0.15)]' : 'text-[#4DE8E8]/45'
+            className={`hidden xl:inline text-[9px] font-mono tracking-widest uppercase font-normal select-none border-l pl-2 transition-colors duration-300 ${
+              isFriday ? 'border-amber-400/20 text-amber-300/40' : 'border-[#4DE8E8]/20 text-[#4DE8E8]/40'
             }`}
           >
-            {isFriday ? 'F.R.I.D.A.Y // CORE v1.0' : 'J.A.R.V.I.S // CORE v1.0'}
+            {isFriday ? 'FRIDAY // v1.0' : 'JARVIS // v1.0'}
           </span>
         </div>
 
