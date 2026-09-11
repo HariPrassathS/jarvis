@@ -26,6 +26,7 @@ import AtmosphericField from '@/components/hud/AtmosphericField';
 import SignInButton from '@/components/auth/SignInButton';
 import IntelligenceSelection from '@/components/auth/IntelligenceSelection';
 import MobileDebugOverlay from '@/components/debug/MobileDebugOverlay';
+import PrivacyModal from '@/components/privacy/PrivacyModal';
 import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
@@ -145,6 +146,10 @@ export default function Home() {
   // ── Multi-Modal Drag-and-Drop & File Staging State ──
   const [isOrbReceiving, setIsOrbReceiving] = useState(false);
   const [stagedAttachments, setStagedAttachments] = useState<ChatAttachment[]>([]);
+
+  // ── Privacy & Data Governance Modal State ──
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [purgeNotification, setPurgeNotification] = useState<string | null>(null);
 
   // ── Mobile Telemetry Debug Overlay Toggle (3-tap gesture) ──
   const [debugOverlayVisible, setDebugOverlayVisible] = useState(false);
@@ -411,6 +416,8 @@ export default function Home() {
   }, [stopSpeaking]);
 
   const {
+    isMicKilled,
+    toggleMicKill,
     interimTranscript,
     isListening,
     isUserSpeaking,
@@ -516,7 +523,7 @@ export default function Home() {
     ? 'speaking'
     : isLoading
     ? 'thinking'
-    : isUserSpeaking || (isListening && !isMuted)
+    : !isMicKilled && (isUserSpeaking || (isListening && !isMuted))
     ? 'listening'
     : 'idle';
 
@@ -677,6 +684,20 @@ export default function Home() {
     setTitleRevealCount(TITLE_CHARS.length);
   }, [signOut, stopSpeaking]);
 
+  const handleAccountPurged = useCallback(async () => {
+    stopSpeaking();
+    clearChat();
+    setIsPrivacyModalOpen(false);
+    await signOut();
+    setNarrativePhase('phase0_dormant');
+    setEntranceStep('ready');
+    setTitleRevealCount(TITLE_CHARS.length);
+    setPurgeNotification('ALL STORED RECORDS PERMANENTLY EXPUNGED. OPERATOR SIGNED OUT.');
+    setTimeout(() => {
+      setPurgeNotification(null);
+    }, 6000);
+  }, [signOut, clearChat, stopSpeaking]);
+
   // ── Handle Persona Selection in Phase 3.5 ──
   const handleSelectPersona = useCallback(
     (chosenPersona: VoicePersona) => {
@@ -736,6 +757,9 @@ export default function Home() {
               userName={profile?.display_name || user?.displayName || user?.email?.split('@')[0] || 'Operator'}
               persona={persona}
               clearanceLevel={clearanceLevel || profile?.clearance_level || 9}
+              isMicKilled={isMicKilled}
+              onToggleMicKill={toggleMicKill}
+              onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
               onPersonaChange={handlePersonaChange}
               onNewChat={handleNewChat}
               onSignOut={handleSignOut}
@@ -824,6 +848,7 @@ export default function Home() {
               bootPhase={orbBootPhase}
               persona={persona}
               hideLabel={!isHudActive}
+              isMicKilled={isMicKilled}
             />
           </motion.div>
 
@@ -1008,6 +1033,7 @@ export default function Home() {
                     isListening={isListening}
                     isUserSpeaking={isUserSpeaking}
                     isMuted={isMuted}
+                    isMicKilled={isMicKilled}
                     isSpeaking={isSpeaking}
                     isLoading={isLoading}
                     interimTranscript={interimTranscript}
@@ -1096,6 +1122,31 @@ export default function Home() {
 
       {/* ═══ MOBILE TELEMETRY & DIAGNOSTICS OVERLAY ═══ */}
       <MobileDebugOverlay forceVisible={debugOverlayVisible} />
+
+      {/* ═══ PRIVACY & DATA GOVERNANCE MODAL ═══ */}
+      <PrivacyModal
+        isOpen={isPrivacyModalOpen}
+        onClose={() => setIsPrivacyModalOpen(false)}
+        getIdToken={async () => (user ? await user.getIdToken() : null)}
+        onAccountPurged={handleAccountPurged}
+        persona={persona}
+        reducedMotion={reducedMotion}
+      />
+
+      {/* ═══ PURGE TOAST NOTIFICATION ═══ */}
+      <AnimatePresence>
+        {purgeNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl bg-red-950/90 border border-red-500/60 shadow-[0_0_25px_rgba(239,68,68,0.4)] text-red-200 font-mono text-xs tracking-wider flex items-center gap-3 backdrop-blur-md pointer-events-none"
+          >
+            <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+            <span>{purgeNotification}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

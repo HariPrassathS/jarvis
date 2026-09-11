@@ -30,6 +30,7 @@ interface JarvisOrbProps {
   bootPhase?: BootNarrativePhase;
   persona?: VoicePersona;
   size?: 'sm' | 'md' | 'lg';
+  isMicKilled?: boolean;
 }
 
 export default function JarvisOrb({
@@ -38,6 +39,7 @@ export default function JarvisOrb({
   bootPhase,
   persona = 'jarvis',
   size = 'md',
+  isMicKilled = false,
 }: JarvisOrbProps) {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -260,15 +262,15 @@ export default function JarvisOrb({
               radarConic:
                 'conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(77,232,232,0.04) 8deg, rgba(77,232,232,0.22) 20deg, rgba(77,232,232,0.55) 32deg, rgba(125,245,245,0.85) 38deg, rgba(255,255,255,0.95) 40deg, transparent 40.5deg, transparent 360deg)',
               glowFilter: 'drop-shadow(0 0 14px rgba(77, 232, 232, 0.75))',
-              stateText: '#4DE8E8',
-              arcBase: '#4DE8E8',
+              stateText: isMicKilled ? '#F87171' : (isFriday ? '#FB7185' : '#4DE8E8'),
+              arcBase: isFriday ? '#FB7185' : '#4DE8E8',
               arcPeak: '#FFFFFF',
               specularColor: 'rgba(224, 255, 255, 0.95)',
               innerShadow:
                 'inset -14px -14px 28px rgba(0, 0, 0, 0.9), inset 8px 8px 18px rgba(77, 232, 232, 0.4)',
             };
     }
-  }, [effectiveState, bootPhase, isFriday]);
+  }, [effectiveState, bootPhase, isFriday, isMicKilled]);
 
   const voiceScale = 1 + (state === 'listening' || state === 'speaking' || state === 'receiving' ? volume * 0.14 : 0);
 
@@ -281,6 +283,8 @@ export default function JarvisOrb({
       ? 'THINKING...'
       : state === 'speaking'
       ? 'SPEAKING...'
+      : isMicKilled
+      ? 'MIC DISABLED'
       : 'IDLE';
 
   // ── Arc Equalizer geometry ──

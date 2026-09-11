@@ -13,6 +13,7 @@ interface AudioSentryToggleProps {
   isListening: boolean;
   isUserSpeaking: boolean;
   isMuted: boolean;
+  isMicKilled?: boolean;
   isSpeaking: boolean;
   isLoading: boolean;
   interimTranscript: string;
@@ -29,6 +30,7 @@ export default function AudioSentryToggle({
   isListening,
   isUserSpeaking,
   isMuted,
+  isMicKilled = false,
   isSpeaking,
   isLoading,
   interimTranscript,
@@ -60,7 +62,7 @@ export default function AudioSentryToggle({
   return (
     <div className="flex flex-col items-center gap-1.5">
       {/* Real-time live transcript bubble when user is speaking */}
-      {isUserSpeaking && interimTranscript && (
+      {isUserSpeaking && interimTranscript && !isMicKilled && (
         <motion.div
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
@@ -74,8 +76,17 @@ export default function AudioSentryToggle({
         </motion.div>
       )}
 
-      {/* ── Case 1: Tab Backgrounded or Screen Locked ── */}
-      {isBackgrounded ? (
+      {/* ── Case 0: Global Mic Kill-Switch Engaged (Highest Priority) ── */}
+      {isMicKilled ? (
+        <div className="flex items-center gap-2 px-3.5 sm:px-4 py-1.5 rounded-full bg-red-950/90 border border-red-500/80 text-[10px] sm:text-[11px] font-mono text-red-200 shadow-[0_0_25px_rgba(239,68,68,0.4)] select-none">
+          <div className="w-2 h-2 rounded-full bg-red-500 animate-ping flex-shrink-0" />
+          <span className="uppercase tracking-[0.16em] font-bold">MIC TERMINATED [KILL-SWITCH ACTIVE]</span>
+          <svg className="w-3.5 h-3.5 text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+          </svg>
+        </div>
+      ) : isBackgrounded ? (
+        /* ── Case 1: Tab Backgrounded or Screen Locked ── */
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/90 border border-amber-500/40 text-[10.5px] font-mono text-amber-300/90 select-none">
           <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
           <span className="uppercase tracking-[0.14em]">MIC SUSPENDED [BACKGROUND]</span>

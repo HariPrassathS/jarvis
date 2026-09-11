@@ -21,6 +21,7 @@ export interface UseSpeechRecognitionReturn {
   isListening: boolean;
   isUserSpeaking: boolean;
   isMuted: boolean;
+  isMicKilled: boolean;
   isSupported: boolean;
   permissionStatus: 'granted' | 'denied' | 'prompt' | 'unsupported';
   isTapToTalk: boolean;
@@ -29,6 +30,8 @@ export interface UseSpeechRecognitionReturn {
   triggerTapToTalk: () => void;
   toggleMute: () => void;
   setMuted: (muted: boolean) => void;
+  toggleMicKill: () => void;
+  setMicKilled: (killed: boolean) => void;
   resetTranscript: () => void;
 }
 
@@ -83,6 +86,7 @@ export function useSpeechRecognition(
   const [isListening, setIsListening] = useState(false);
   const [isUserSpeaking, setIsUserSpeaking] = useState(false);
   const [isMuted, setIsMuted] = useState(initialMuted);
+  const [isMicKilled, setIsMicKilled] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<
     'granted' | 'denied' | 'prompt' | 'unsupported'
   >('prompt');
@@ -93,6 +97,9 @@ export function useSpeechRecognition(
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const isMutedRef = useRef(isMuted);
   isMutedRef.current = isMuted;
+
+  const isMicKilledRef = useRef(isMicKilled);
+  isMicKilledRef.current = isMicKilled;
 
   const isSpeakingRef = useRef(isSpeaking);
   isSpeakingRef.current = isSpeaking;
@@ -138,9 +145,9 @@ export function useSpeechRecognition(
     }
   }, []);
 
-  // ── Start listening loop safely ──
+  // ── Start listening loop safely (Hard-blocked if Mic Kill-Switch is engaged) ──
   const startEngine = useCallback(() => {
-    if (!recognitionRef.current || isMutedRef.current || isStartedRef.current) return;
+    if (!recognitionRef.current || isMicKilledRef.current || isMutedRef.current || isStartedRef.current) return;
     try {
       recognitionRef.current.start();
       isStartedRef.current = true;
@@ -158,16 +165,23 @@ export function useSpeechRecognition(
     }
   }, []);
 
-  // ── Stop listening loop ──
+  // ── Stop listening loop immediately (Aborts active recognition and cancels restart timers) ──
   const stopEngine = useCallback(() => {
-    if (!recognitionRef.current) return;
     if (restartTimerRef.current) {
       clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
     }
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+    if (!recognitionRef.current) return;
+    try {
+      recognitionRef.current.abort();
+      diagnosticLogger.log('speech', 'SpeechRecognition.abort() invoked');
+    } catch {}
     try {
       recognitionRef.current.stop();
-      diagnosticLogger.log('speech', 'SpeechRecognition.stop() invoked');
     } catch {}
     isStartedRef.current = false;
     setIsListening(false);
@@ -175,7 +189,7 @@ export function useSpeechRecognition(
 
   // ── Tap-to-Talk Manual Action for Mobile/Fallback ──
   const triggerTapToTalk = useCallback(() => {
-    if (!recognitionRef.current || isLoadingRef.current) return;
+    if (!recognitionRef.current || isLoadingRef.current || isMicKilledRef.current) return;
 
     diagnosticLogger.log('speech', 'Tap-to-Talk triggered by operator touch', {
       isStarted: isStartedRef.current,
@@ -234,6 +248,7 @@ export function useSpeechRecognition(
 
       resumeTimerRef.current = setTimeout(() => {
         if (
+          !isMicKilledRef.current &&
           !isMutedRef.current &&
           !isSpeakingRef.current &&
           !isTapToTalkRef.current &&
@@ -270,6 +285,14 @@ export function useSpeechRecognition(
       recognition.lang = 'en-US';
 
       recognition.onstart = () => {
+        if (isMicKilledRef.current) {
+          try {
+            recognition.abort();
+          } catch {}
+          isStartedRef.current = false;
+          setIsListening(false);
+          return;
+        }
         isStartedRef.current = true;
         setIsListening(true);
         setPermissionStatus('granted');
@@ -286,6 +309,7 @@ export function useSpeechRecognition(
       };
 
       recognition.onspeechstart = () => {
+        if (isMicKilledRef.current) return;
         diagnosticLogger.log('speech', 'Human speech detected (onspeechstart)');
         setIsUserSpeaking(true);
       };
@@ -299,7 +323,7 @@ export function useSpeechRecognition(
       };
 
       recognition.onresult = (event: SpeechRecognitionEvent) => {
-        if (isMutedRef.current) return;
+        if (isMicKilledRef.current || isMutedRef.current) return;
 
         // Defensive Layer 1: Synchronously suppress ALL speech accumulation during active TTS playback
         if (isSpeakingRef.current) {
@@ -339,7 +363,7 @@ export function useSpeechRecognition(
           .replace(/\s+/g, ' ')
           .trim();
 
-        if (currentSpoken) {
+        if (currentSpoken && !isMicKilledRef.current) {
           rapidAbortCountRef.current = 0; // reset error threshold
           setInterimTranscript(currentSpoken);
           setIsUserSpeaking(true);
@@ -355,7 +379,7 @@ export function useSpeechRecognition(
 
           const capturedSpoken = currentSpoken;
           silenceTimeoutRef.current = setTimeout(() => {
-            if (capturedSpoken.length > 1 && !isLoadingRef.current) {
+            if (capturedSpoken.length > 1 && !isLoadingRef.current && !isMicKilledRef.current) {
               console.log('[Always-On Voice] 🎙️ Turn complete:', capturedSpoken);
               diagnosticLogger.log('speech', `Turn complete: "${capturedSpoken}"`);
               accumulatedTextRef.current = '';
@@ -387,7 +411,7 @@ export function useSpeechRecognition(
         } else if (event.error === 'aborted') {
           rapidAbortCountRef.current += 1;
           // If 3+ rapid aborts occur on continuous mode, gracefully switch to tap-to-talk!
-          if (rapidAbortCountRef.current >= 3 && !isTapToTalkRef.current) {
+          if (rapidAbortCountRef.current >= 3 && !isTapToTalkRef.current && !isMicKilledRef.current) {
             console.warn('[Always-On Voice] ⚠️ Continuous mode restricted by browser. Engaging Tap-to-Talk fallback.');
             setIsTapToTalk(true);
             isTapToTalkRef.current = true;
@@ -405,8 +429,9 @@ export function useSpeechRecognition(
         setIsListening(false);
         diagnosticLogger.log('speech', 'recognition.onend event');
 
-        // Do not auto-restart if muted, TTS is actively speaking, in tap-to-talk mode, or tab is hidden
+        // Do not auto-restart if mic is killed, muted, TTS is actively speaking, in tap-to-talk mode, or tab is hidden
         if (
+          !isMicKilledRef.current &&
           !isMutedRef.current &&
           !isSpeakingRef.current &&
           !isTapToTalkRef.current &&
@@ -414,15 +439,17 @@ export function useSpeechRecognition(
           document.visibilityState === 'visible'
         ) {
           restartTimerRef.current = setTimeout(() => {
-            startEngine();
+            if (!isMicKilledRef.current) {
+              startEngine();
+            }
           }, 300);
         }
       };
 
       recognitionRef.current = recognition;
 
-      // Automatically engage always-on listening if not muted and not mobile tap-to-talk
-      if (!initialMuted && !isTapToTalkRef.current) {
+      // Automatically engage always-on listening if not muted, not killed, and not mobile tap-to-talk
+      if (!initialMuted && !isMicKilledRef.current && !isTapToTalkRef.current) {
         startEngine();
       }
     } catch (err: any) {
@@ -438,7 +465,7 @@ export function useSpeechRecognition(
         stopEngine();
       } else if (document.visibilityState === 'visible') {
         setIsBackgrounded(false);
-        if (!isMutedRef.current && !isTapToTalkRef.current) {
+        if (!isMicKilledRef.current && !isMutedRef.current && !isTapToTalkRef.current) {
           startEngine();
         }
       }
@@ -465,7 +492,9 @@ export function useSpeechRecognition(
         setIsUserSpeaking(false);
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
       } else {
-        startEngine();
+        if (!isMicKilledRef.current) {
+          startEngine();
+        }
       }
       return next;
     });
@@ -481,7 +510,58 @@ export function useSpeechRecognition(
         setIsUserSpeaking(false);
         if (silenceTimeoutRef.current) clearTimeout(silenceTimeoutRef.current);
       } else {
-        startEngine();
+        if (!isMicKilledRef.current) {
+          startEngine();
+        }
+      }
+    },
+    [startEngine, stopEngine]
+  );
+
+  // ── Global Mic Kill-Switch (Hard Hardware Stream Sever) ──
+  const toggleMicKill = useCallback(() => {
+    setIsMicKilled((prev) => {
+      const next = !prev;
+      isMicKilledRef.current = next;
+      if (next) {
+        stopEngine();
+        setInterimTranscript('');
+        accumulatedTextRef.current = '';
+        setIsUserSpeaking(false);
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+        diagnosticLogger.log('speech', '🛑 Global Mic Kill-Switch ENGAGED — Hardware mic stream terminated');
+      } else {
+        diagnosticLogger.log('speech', '🟢 Global Mic Kill-Switch DISENGAGED — Hardware mic stream restored');
+        if (!isMutedRef.current && !isTapToTalkRef.current) {
+          startEngine();
+        }
+      }
+      return next;
+    });
+  }, [startEngine, stopEngine]);
+
+  const setMicKilled = useCallback(
+    (killed: boolean) => {
+      setIsMicKilled(killed);
+      isMicKilledRef.current = killed;
+      if (killed) {
+        stopEngine();
+        setInterimTranscript('');
+        accumulatedTextRef.current = '';
+        setIsUserSpeaking(false);
+        if (silenceTimeoutRef.current) {
+          clearTimeout(silenceTimeoutRef.current);
+          silenceTimeoutRef.current = null;
+        }
+        diagnosticLogger.log('speech', '🛑 Global Mic Kill-Switch ENGAGED — Hardware mic stream terminated');
+      } else {
+        diagnosticLogger.log('speech', '🟢 Global Mic Kill-Switch DISENGAGED — Hardware mic stream restored');
+        if (!isMutedRef.current && !isTapToTalkRef.current) {
+          startEngine();
+        }
       }
     },
     [startEngine, stopEngine]
@@ -498,6 +578,7 @@ export function useSpeechRecognition(
     isListening,
     isUserSpeaking,
     isMuted,
+    isMicKilled,
     isSupported,
     permissionStatus,
     isTapToTalk,
@@ -506,6 +587,8 @@ export function useSpeechRecognition(
     triggerTapToTalk,
     toggleMute,
     setMuted,
+    toggleMicKill,
+    setMicKilled,
     resetTranscript,
   };
 }
