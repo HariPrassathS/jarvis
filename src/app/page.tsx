@@ -644,7 +644,7 @@ export default function Home() {
       return;
     }
 
-    // Stream just finished — queue any remaining un-spoken tail
+    // Stream just finished — queue all newly completed sentences and any remaining un-spoken tail
     if (!isStreaming && streamingMsgIndexRef.current === lastIdx && lastMsg.content) {
       const content = lastMsg.content;
       const boundaries: number[] = [];
@@ -654,7 +654,18 @@ export default function Home() {
         boundaries.push(match.index + match[0].length);
       }
 
-      // Queue the tail (text after the last sentence boundary)
+      // Queue any newly completed sentences that arrived with the final chunk
+      for (let i = lastQueuedSentenceIdxRef.current; i < boundaries.length; i++) {
+        const start = i === 0 ? 0 : boundaries[i - 1];
+        const end = boundaries[i];
+        const sentence = content.slice(start, end).trim();
+        if (sentence.length > 0) {
+          queueSentence(sentence, persona);
+        }
+      }
+      lastQueuedSentenceIdxRef.current = boundaries.length;
+
+      // Queue the tail (text after the last sentence boundary without a trailing period/mark)
       const lastBoundary = boundaries.length > 0 ? boundaries[boundaries.length - 1] : 0;
       if (lastBoundary < content.length) {
         const tail = content.slice(lastBoundary).trim();
@@ -668,7 +679,7 @@ export default function Home() {
       return;
     }
 
-    // Non-streaming: speak full message (greetings, history replay, fallback)
+    // Non-streaming / single-payload: speak full message (greetings, history replay, fallback)
     if (!isStreaming && lastSpokenIndexRef.current !== lastIdx) {
       lastSpokenIndexRef.current = lastIdx;
       lastAssistantResponseRef.current = { text: lastMsg.content, timestamp: Date.now() };

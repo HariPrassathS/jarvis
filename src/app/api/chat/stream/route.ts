@@ -190,7 +190,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     const settingsObj = cachedSettings || settingsData?.data;
-    const preferredProvider = settingsObj?.preferred_provider;
+    const preferredProvider = settingsObj?.preferred_provider || 'groq';
     const effectivePersona: VoicePersona = requestPersona || settingsObj?.voice_persona || 'jarvis';
 
     if (!cachedSettings && settingsObj) {

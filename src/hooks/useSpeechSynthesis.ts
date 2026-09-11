@@ -177,6 +177,32 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
     };
   }, [isSupported]);
 
+  // ── Browser Audio Unlock on first user gesture ──
+  useEffect(() => {
+    if (!isSupported) return;
+    const unlockAudio = () => {
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        const dummy = new SpeechSynthesisUtterance('');
+        dummy.volume = 0;
+        window.speechSynthesis.speak(dummy);
+      } catch {}
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio, { once: true });
+    window.addEventListener('touchstart', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('touchstart', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [isSupported]);
+
   // ── Liveness Watchdog: periodically recovers stale isSpeaking state if synthesis is dead ──
   useEffect(() => {
     if (!isSupported) return;
@@ -282,7 +308,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
   /**
    * Internal: speak a single text chunk with persona-tuned acoustic delivery.
    * Returns a promise that resolves when the utterance finishes.
-   * Guaranteed to resolve via safety watchdog timer.
+   * Guaranteed to resolve via safety watchdog timer and automatic fallback to default voice.
    */
   const speakChunk = useCallback(
     (text: string, effectivePersona: VoicePersona): Promise<void> => {
@@ -303,29 +329,7 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
             window.speechSynthesis.resume();
           }
 
-          const utterance = new SpeechSynthesisUtterance(cleaned);
-          activeUtteranceRef.current = utterance;
-          if (typeof window !== 'undefined') {
-            (window as any).__jarvisCurrentUtterance__ = utterance;
-          }
-
-          const voice = selectVoice(effectivePersona);
-
-          if (voice) {
-            utterance.voice = voice;
-            setActiveVoiceName(voice.name);
-          }
-
-          if (effectivePersona === 'friday') {
-            utterance.pitch = 1.12;
-            utterance.rate = 1.03;
-          } else {
-            utterance.pitch = 0.85;
-            utterance.rate = 0.96;
-          }
-
-          utterance.volume = 1.0;
-
+          let retriedWithDefault = false;
           let isResolved = false;
           let safetyTimer: NodeJS.Timeout | null = null;
 
@@ -347,13 +351,56 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
             done();
           }, maxDurationMs);
 
-          utterance.onend = done;
-          utterance.onerror = (e) => {
-            console.warn('[TTS] Chunk synthesis error:', e);
-            done();
+          const startPlayback = (useCustomVoice: boolean) => {
+            const utterance = new SpeechSynthesisUtterance(cleaned);
+            activeUtteranceRef.current = utterance;
+            if (typeof window !== 'undefined') {
+              (window as any).__jarvisCurrentUtterance__ = utterance;
+            }
+
+            if (useCustomVoice) {
+              const voice = selectVoice(effectivePersona);
+              if (voice) {
+                utterance.voice = voice;
+                setActiveVoiceName(voice.name);
+              }
+            } else {
+              utterance.voice = null;
+              setActiveVoiceName('System Default');
+            }
+
+            if (effectivePersona === 'friday') {
+              utterance.pitch = 1.12;
+              utterance.rate = 1.03;
+            } else {
+              utterance.pitch = 0.85;
+              utterance.rate = 0.96;
+            }
+            utterance.volume = 1.0;
+
+            utterance.onend = done;
+            utterance.onerror = (e) => {
+              console.warn('[TTS] Chunk synthesis error:', e.error || e);
+              // If custom voice failed and not yet retried, retry with default voice
+              if (useCustomVoice && !retriedWithDefault && e.error !== 'canceled' && e.error !== 'interrupted') {
+                retriedWithDefault = true;
+                console.log('[TTS] Retrying chunk with native system default voice...');
+                setTimeout(() => {
+                  try {
+                    startPlayback(false);
+                  } catch {
+                    done();
+                  }
+                }, 20);
+                return;
+              }
+              done();
+            };
+
+            window.speechSynthesis.speak(utterance);
           };
 
-          window.speechSynthesis.speak(utterance);
+          startPlayback(true);
         } catch (e: any) {
           console.warn('[TTS] Chunk playback error:', e);
           activeUtteranceRef.current = null;
@@ -434,48 +481,8 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
         sentenceQueueRef.current = [];
         isQueuePlayingRef.current = false;
         window.speechSynthesis.cancel();
-        if (window.speechSynthesis.paused) {
-          window.speechSynthesis.resume();
-        }
 
-        const utterance = new SpeechSynthesisUtterance(cleaned);
-        activeUtteranceRef.current = utterance;
-        if (typeof window !== 'undefined') {
-          (window as any).__jarvisCurrentUtterance__ = utterance;
-        }
-
-        const voice = selectVoice(effectivePersona);
-
-        if (voice) {
-          utterance.voice = voice;
-          setActiveVoiceName(voice.name);
-        }
-
-        // Persona acoustic profile tuning
-        if (effectivePersona === 'friday') {
-          utterance.pitch = 1.12;
-          utterance.rate = 1.03;
-        } else {
-          utterance.pitch = 0.85;
-          utterance.rate = 0.96;
-        }
-
-        utterance.volume = 1.0;
-
-        diagnosticLogger.log('tts', `Speaking as ${effectivePersona.toUpperCase()}`, {
-          voiceName: voice?.name || 'Default',
-          pitch: utterance.pitch,
-          rate: utterance.rate,
-          text: cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned,
-        });
-
-        if (settleTimerRef.current) {
-          clearTimeout(settleTimerRef.current);
-          settleTimerRef.current = null;
-        }
-
-        setIsSpeaking(true);
-
+        let retriedWithDefault = false;
         let isCompleted = false;
         let safetyTimer: NodeJS.Timeout | null = null;
 
@@ -494,27 +501,91 @@ export function useSpeechSynthesis(persona: VoicePersona = 'jarvis'): UseSpeechS
           }, 200);
         };
 
-        // Watchdog timer for full speech
-        const maxDurationMs = Math.min(30000, Math.max(4000, cleaned.length * 110));
-        safetyTimer = setTimeout(() => {
-          console.warn('[TTS] Full speech watchdog timeout triggered. Releasing speaking state.');
-          finish();
-        }, maxDurationMs);
+        const startPlayback = (useCustomVoice: boolean) => {
+          if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+          }
 
-        utterance.onstart = () => {
+          const utterance = new SpeechSynthesisUtterance(cleaned);
+          activeUtteranceRef.current = utterance;
+          if (typeof window !== 'undefined') {
+            (window as any).__jarvisCurrentUtterance__ = utterance;
+          }
+
+          if (useCustomVoice) {
+            const voice = selectVoice(effectivePersona);
+            if (voice) {
+              utterance.voice = voice;
+              setActiveVoiceName(voice.name);
+            }
+          } else {
+            utterance.voice = null;
+            setActiveVoiceName('System Default');
+          }
+
+          if (effectivePersona === 'friday') {
+            utterance.pitch = 1.12;
+            utterance.rate = 1.03;
+          } else {
+            utterance.pitch = 0.85;
+            utterance.rate = 0.96;
+          }
+          utterance.volume = 1.0;
+
+          diagnosticLogger.log('tts', `Speaking as ${effectivePersona.toUpperCase()}`, {
+            voiceName: useCustomVoice ? (utterance.voice?.name || 'Default') : 'System Default',
+            pitch: utterance.pitch,
+            rate: utterance.rate,
+            text: cleaned.length > 40 ? `${cleaned.slice(0, 40)}...` : cleaned,
+          });
+
+          if (settleTimerRef.current) {
+            clearTimeout(settleTimerRef.current);
+            settleTimerRef.current = null;
+          }
+
           setIsSpeaking(true);
-          diagnosticLogger.log('tts', 'Speech synthesis started');
+
+          // Watchdog timer for full speech
+          const maxDurationMs = Math.min(30000, Math.max(4000, cleaned.length * 110));
+          if (safetyTimer) clearTimeout(safetyTimer);
+          safetyTimer = setTimeout(() => {
+            console.warn('[TTS] Full speech watchdog timeout triggered. Releasing speaking state.');
+            finish();
+          }, maxDurationMs);
+
+          utterance.onstart = () => {
+            setIsSpeaking(true);
+            diagnosticLogger.log('tts', 'Speech synthesis started');
+          };
+
+          utterance.onend = finish;
+
+          utterance.onerror = (e) => {
+            console.warn('[TTS] Synthesis error:', e.error || e);
+            diagnosticLogger.log('tts', `Synthesis error: ${e.error || e}`);
+            if (useCustomVoice && !retriedWithDefault && e.error !== 'canceled' && e.error !== 'interrupted') {
+              retriedWithDefault = true;
+              console.log('[TTS] Retrying full speech with native system default voice...');
+              setTimeout(() => {
+                try {
+                  startPlayback(false);
+                } catch {
+                  finish();
+                }
+              }, 20);
+              return;
+            }
+            finish();
+          };
+
+          window.speechSynthesis.speak(utterance);
         };
 
-        utterance.onend = finish;
-
-        utterance.onerror = (e) => {
-          console.warn('[TTS] Synthesis error:', e);
-          diagnosticLogger.log('tts', `Synthesis error: ${e.error || e}`);
-          finish();
-        };
-
-        window.speechSynthesis.speak(utterance);
+        // Small 20ms timeout to allow Chrome cancel() to settle before starting new utterance
+        setTimeout(() => {
+          startPlayback(true);
+        }, 20);
       } catch (e: any) {
         console.warn('[TTS] Speech playback error:', e);
         diagnosticLogger.log('tts', `Playback exception: ${e?.message || e}`);
