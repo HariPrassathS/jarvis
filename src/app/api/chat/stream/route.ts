@@ -346,31 +346,44 @@ export async function POST(req: NextRequest) {
                 });
               }
 
-              // Re-invoke blocking (no tools) for final synthesis
+              // Stream synthesis tokens immediately so client begins speaking first sentence right away
               try {
-                const synthResponse = await routeChat({
+                accumulatedContent = '';
+                for await (const synthChunk of routeChatStream({
                   messages: synthMessages,
                   tools: undefined,
                   preferredProvider,
-                });
-
-                accumulatedContent = synthResponse.content || '';
-                providerUsed = synthResponse.provider_used || providerUsed;
-
-                // Send synthesis as a single text chunk
-                sendSSE({ token: accumulatedContent });
-                sendSSE({
-                  done: true,
-                  provider_used: synthResponse.provider_used,
-                });
-                console.log(`[Server:ChatStream] 🛠️ Tool synthesis completed (${accumulatedContent.length} chars)`);
+                })) {
+                  if (synthChunk.token) {
+                    accumulatedContent += synthChunk.token;
+                    sendSSE({ token: synthChunk.token });
+                  }
+                  if (synthChunk.provider_used) {
+                    providerUsed = synthChunk.provider_used;
+                  }
+                  if (synthChunk.done) {
+                    break;
+                  }
+                }
+                console.log(`[Server:ChatStream] 🛠️ Tool streaming synthesis completed (${accumulatedContent.length} chars)`);
               } catch (synthErr) {
-                console.warn('[Server:ChatStream] Tool synthesis fallback:', synthErr);
-                sendSSE({
-                  done: true,
-                  provider_used: providerUsed as any,
-                  error: 'Tool synthesis failed',
-                });
+                console.warn('[Server:ChatStream] Tool streaming synthesis fallback:', synthErr);
+                try {
+                  const synthResponse = await routeChat({
+                    messages: synthMessages,
+                    tools: undefined,
+                    preferredProvider,
+                  });
+                  accumulatedContent = synthResponse.content || '';
+                  providerUsed = synthResponse.provider_used || providerUsed;
+                  sendSSE({ token: accumulatedContent });
+                } catch (fallbackErr) {
+                  sendSSE({
+                    done: true,
+                    provider_used: providerUsed as any,
+                    error: 'Tool synthesis failed',
+                  });
+                }
               }
 
               break; // Tool calls end the stream
