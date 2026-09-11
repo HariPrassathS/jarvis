@@ -442,7 +442,7 @@ SECTION 11: IN-UNIVERSE BRANDING & PERMANENT CREATOR IDENTITY
 3. PERMANENT CREATOR IDENTITY IN PROMPTING:
    - File: `src/lib/llm/system-prompt.ts`
    - Permanent baseline knowledge injected into `buildSystemPrompt` for every request across both personas (JARVIS and FRIDAY):
-     * Full Name: Hari Prassath S
+     * Full Name: Hari Prassath Selvaraj
      * Role: Sole developer and creator of this entire J.A.R.V.I.S project
      * Development Style: Vibe coder — builds via rapid, intuitive, AI-assisted iteration
      * In-Universe Role: Builder and founder of Stark Industries
@@ -456,7 +456,7 @@ SECTION 11: IN-UNIVERSE BRANDING & PERMANENT CREATOR IDENTITY
      * Excluded from static query caching (`src/lib/cache/query-cache.ts`) so every inquiry receives natural, lively variation in phrasing rather than repeating identical sentences.
 
 5. IMMERSION GUARDRAILS:
-   - Unprompted Boundary: The assistant never brings up Hari Prassath S unprompted during unrelated queries (weather, math, physics, protocols).
+   - Unprompted Boundary: The assistant never brings up Hari Prassath Selvaraj unprompted during unrelated queries (weather, math, physics, protocols).
    - No Biographical Hallucination: If asked follow-ups beyond confirmed lore (home address, favorite food, personal phone number), both personas stay in-character and honestly state that information is not on file without fabricating facts.
 
 ================================================================================

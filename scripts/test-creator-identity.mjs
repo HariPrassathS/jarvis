@@ -95,9 +95,9 @@ async function runTests() {
   console.log(`"${jarvisRes1.reply}"`);
   console.log('Provider used:', jarvisRes1.provider_used);
 
-  const jarvisMentionsHari = /Hari(\s+Prassath(\s+S)?)?/i.test(jarvisRes1.reply);
+  const jarvisMentionsHari = /Hari(\s+Prassath(\s+Selvaraj)?)?/i.test(jarvisRes1.reply);
   const jarvisMentionsLore = /Quantic\s+Labs|Stark\s+Industries|vibe\s+coder/i.test(jarvisRes1.reply);
-  console.log(`✔ Mentions Hari Prassath S: ${jarvisMentionsHari ? 'PASS' : 'FAIL'}`);
+  console.log(`✔ Mentions Hari Prassath Selvaraj: ${jarvisMentionsHari ? 'PASS' : 'FAIL'}`);
   console.log(`✔ Mentions in-universe / vibe coder lore: ${jarvisMentionsLore ? 'PASS' : 'FAIL'}`);
 
   // 3. Test JARVIS Persona Second Phrasing (Testing natural variation)
@@ -106,8 +106,8 @@ async function runTests() {
   const jarvisRes2 = await sendChat(token, "Who is your developer and how were you built?", 'jarvis');
   console.log('J.A.R.V.I.S Reply (Who is your developer...):');
   console.log(`"${jarvisRes2.reply}"`);
-  const jarvis2MentionsHari = /Hari(\s+Prassath(\s+S)?)?/i.test(jarvisRes2.reply);
-  console.log(`✔ Mentions Hari Prassath S: ${jarvis2MentionsHari ? 'PASS' : 'FAIL'}`);
+  const jarvis2MentionsHari = /Hari(\s+Prassath(\s+Selvaraj)?)?/i.test(jarvisRes2.reply);
+  console.log(`✔ Mentions Hari Prassath Selvaraj: ${jarvis2MentionsHari ? 'PASS' : 'FAIL'}`);
 
   // 4. Test FRIDAY Persona Creator Inquiry
   console.log('\n--- Step 4: Testing F.R.I.D.A.Y persona origin question ---');
@@ -117,14 +117,14 @@ async function runTests() {
   console.log(`"${fridayRes1.reply}"`);
   console.log('Provider used:', fridayRes1.provider_used);
 
-  const fridayMentionsHari = /Hari(\s+Prassath(\s+S)?)?/i.test(fridayRes1.reply);
+  const fridayMentionsHari = /Hari(\s+Prassath(\s+Selvaraj)?)?/i.test(fridayRes1.reply);
   const fridayMentionsLore = /Quantic\s+Labs|Stark\s+Industries|vibe\s+coder/i.test(fridayRes1.reply);
   const fridayToneMatch = /boss|feel|book|yeah|that\'d/i.test(fridayRes1.reply);
-  console.log(`✔ Mentions Hari Prassath S: ${fridayMentionsHari ? 'PASS' : 'FAIL'}`);
+  console.log(`✔ Mentions Hari Prassath Selvaraj: ${fridayMentionsHari ? 'PASS' : 'FAIL'}`);
   console.log(`✔ Mentions in-universe / vibe coder lore: ${fridayMentionsLore ? 'PASS' : 'FAIL'}`);
   console.log(`✔ Exhibits FRIDAY warm tactical tone: ${fridayToneMatch ? 'PASS' : 'NOTE (Acceptable)'}`);
 
-  // 5. Test Guardrail: Unprompted Inquiries (Should NOT bring up Hari Prassath S)
+  // 5. Test Guardrail: Unprompted Inquiries (Should NOT bring up Hari Prassath Selvaraj)
   console.log('\n--- Step 5: Testing Guardrail 1 (Unprompted unrelated query) ---');
   await delay(1500);
   const mathRes = await sendChat(token, 'What is 35 multiplied by 4?', 'jarvis');
