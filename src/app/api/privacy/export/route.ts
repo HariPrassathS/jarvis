@@ -10,6 +10,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken } from '@/lib/firebase-admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 
+import { getUploadedFiles } from '@/lib/files/metadata';
+import { getSignedFileUrl } from '@/lib/files/storage';
+
 export async function GET(req: NextRequest) {
   try {
     // 1. Authenticate via verified Firebase ID Token
@@ -43,16 +46,32 @@ export async function GET(req: NextRequest) {
 
     const profileId = profile?.id || profileUid;
 
-    // 3. Parallel queries for settings, memories, conversations
-    const [settingsRes, memoryRes, convRes] = await Promise.all([
+    // 3. Parallel queries for settings, memories, conversations, uploaded files
+    const [settingsRes, memoryRes, convRes, filesData] = await Promise.all([
       supabase.from('settings').select('*').eq('profile_id', profileId).maybeSingle(),
       supabase.from('memory').select('*').eq('profile_id', profileId).order('updated_at', { ascending: false }),
       supabase.from('conversations').select('*').eq('profile_id', profileId).order('created_at', { ascending: false }),
+      getUploadedFiles(profileId),
     ]);
 
     const settings = settingsRes.data || null;
     const memories = memoryRes.data || [];
     const conversations = convRes.data || [];
+
+    // Generate 24-hour signed download links for uploaded files
+    const exportedFiles = await Promise.all(
+      filesData.map(async (f) => ({
+        id: f.id,
+        filename: f.original_filename,
+        file_type: f.file_type,
+        mime_type: f.mime_type,
+        size_bytes: f.file_size_bytes,
+        ai_description: f.ai_description,
+        uploaded_at: f.uploaded_at,
+        storage_path: f.storage_path,
+        download_url: (await getSignedFileUrl(f.storage_path, 86400)) || undefined,
+      }))
+    );
 
     // 4. Query messages for all conversations
     let messagesMap: Record<string, any[]> = {};
@@ -112,6 +131,7 @@ export async function GET(req: NextRequest) {
           created_at: m.created_at,
         })),
       })),
+      uploaded_files: exportedFiles,
     };
 
     const sanitizedName = (profile?.display_name || 'operator').replace(/[^a-z0-9]/gi, '-').toLowerCase();

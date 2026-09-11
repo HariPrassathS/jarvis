@@ -1172,6 +1172,7 @@ export default function Home() {
               stagedAttachments={stagedAttachments}
               onRemoveStagedAttachment={(id) => setStagedAttachments((prev) => prev.filter((a) => a.id !== id))}
               onAddStagedAttachments={(atts) => setStagedAttachments((prev) => [...prev, ...atts])}
+              getIdToken={async () => (user ? await user.getIdToken() : null)}
             />
           </motion.div>
         )}

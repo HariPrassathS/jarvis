@@ -97,6 +97,14 @@ export default function CommandPalette({
       badge: 'LVL 9',
       perform: () => onSelectPrompt("What is on my executive calendar for today?"),
     },
+    {
+      id: 'recall-files',
+      category: 'DIRECTIVES',
+      title: 'Recall Uploaded Files & Telemetry',
+      description: 'Query databank for past uploaded images, schematics, and documents',
+      badge: 'TOOL',
+      perform: () => onSelectPrompt("What files, photos, or documents have I uploaded previously?"),
+    },
 
     // Persona
     {

@@ -12,6 +12,7 @@ import { runSystemDiagnostics } from './diagnostics';
 import { executeStarkProtocol, StarkProtocolName } from './protocols';
 import { computeFlightDynamics } from './flight';
 import { getCalendarEvents } from './calendar';
+import { recallUploadedFiles } from './files';
 import { jarvisCache } from '@/lib/llm/cache';
 
 export interface ToolExecutionContext {
@@ -125,6 +126,16 @@ export async function executeTool(
           'Stored memories:\n' +
           memories.map((m) => `- ${m.key}: ${m.value}${m.mention_count && m.mention_count > 1 ? ` (referenced ${m.mention_count}x)` : ''}`).join('\n');
       }
+      break;
+    }
+
+    case 'recall_uploaded_files': {
+      content = await recallUploadedFiles(profileId, {
+        query: args.query,
+        file_type: args.file_type,
+        time_range: args.time_range,
+        limit: args.limit ? Number(args.limit) : undefined,
+      });
       break;
     }
 

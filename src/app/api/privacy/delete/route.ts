@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyIdToken } from '@/lib/firebase-admin';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { jarvisCache } from '@/lib/llm/cache';
+import { deleteUserFiles } from '@/lib/files/storage';
+import { deleteUploadedFilesByProfile } from '@/lib/files/metadata';
 
 const CONFIRMATION_PHRASE = 'DELETE ALL DATA';
 
@@ -64,8 +66,25 @@ export async function POST(req: NextRequest) {
     let deletedConversationsCount = 0;
     let deletedMessagesCount = 0;
     let deletedMemoriesCount = 0;
+    let deletedFilesCount = 0;
+
+    // A. Purge all stored binary files from 'user-files' Supabase Storage bucket
+    try {
+      const { deletedCount } = await deleteUserFiles(profileUid);
+      deletedFilesCount = deletedCount;
+    } catch (storageDelErr) {
+      console.warn('[Privacy Deletion API] Storage purge warning:', storageDelErr);
+    }
 
     if (profileId) {
+      // B. Purge file metadata records from PostgreSQL
+      try {
+        const { deletedCount: dbFilesCount } = await deleteUploadedFilesByProfile(profileId);
+        if (dbFilesCount > deletedFilesCount) deletedFilesCount = dbFilesCount;
+      } catch (dbFileErr) {
+        console.warn('[Privacy Deletion API] File metadata purge warning:', dbFileErr);
+      }
+
       // Find all conversations
       const { data: conversations } = await supabase
         .from('conversations')
@@ -118,19 +137,22 @@ export async function POST(req: NextRequest) {
 
     // 4. Invalidate all server memory caches for this operator
     jarvisCache.delete(`profile:${profileUid}`);
+    jarvisCache.delete(`files:${profileUid}`);
     if (profileId) {
       jarvisCache.delete(`settings:${profileId}`);
+      jarvisCache.delete(`memories:${profileId}`);
     }
 
     console.log(`[Privacy Deletion API] Operator ${profileUid} permanently purged from Supabase.`);
 
     return NextResponse.json({
       success: true,
-      message: 'All operator data across Stark Matrix tables has been permanently expunged.',
+      message: 'All operator data across Stark Matrix tables and Storage has been permanently expunged.',
       summary: {
         conversations_purged: deletedConversationsCount,
         messages_purged: deletedMessagesCount,
         memories_purged: deletedMemoriesCount,
+        files_purged: deletedFilesCount,
       },
     });
   } catch (error) {

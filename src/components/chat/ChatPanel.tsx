@@ -1,14 +1,14 @@
 'use client';
 
 // ──────────────────────────────────────────────
-// Chat Panel — Multi-Modal Vision & Document Upload
-// Visual Spec: Clean Bottom Input Bar, Staged Media Chips & Expandable Transcript Drawer
+// Chat Panel — Multi-Modal Vision, Document Upload & Long-Term Files Vault
+// Visual Spec: Clean Bottom Input Bar, Staged Media Chips, Neural Transcript & Telemetry Vault
 // ──────────────────────────────────────────────
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { processUploadedFile } from '@/lib/document/extractor';
-import type { ChatMessage, VoicePersona, ChatAttachment } from '@/types';
+import type { ChatMessage, VoicePersona, ChatAttachment, UploadedFileRecord } from '@/types';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -22,6 +22,7 @@ interface ChatPanelProps {
   stagedAttachments?: ChatAttachment[];
   onRemoveStagedAttachment?: (id: string) => void;
   onAddStagedAttachments?: (attachments: ChatAttachment[]) => void;
+  getIdToken?: () => Promise<string | null>;
 }
 
 export default function ChatPanel({
@@ -36,11 +37,18 @@ export default function ChatPanel({
   stagedAttachments: externalStaged,
   onRemoveStagedAttachment,
   onAddStagedAttachments,
+  getIdToken,
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const [localAttachments, setLocalAttachments] = useState<ChatAttachment[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; size: number } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; size: number; aiDescription?: string } | null>(null);
+  const [drawerTab, setDrawerTab] = useState<'transcript' | 'vault'>('transcript');
+  const [vaultFiles, setVaultFiles] = useState<UploadedFileRecord[]>([]);
+  const [isVaultLoading, setIsVaultLoading] = useState(false);
+  const [vaultSearch, setVaultSearch] = useState('');
+  const [expandedFileIds, setExpandedFileIds] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -50,10 +58,44 @@ export default function ChatPanel({
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && drawerTab === 'transcript') {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isLoading, isExpanded, allStaged.length]);
+  }, [messages, isLoading, isExpanded, allStaged.length, drawerTab]);
+
+  // Load vault files from /api/files
+  const loadVault = useCallback(async () => {
+    if (!getIdToken) return;
+    setIsVaultLoading(true);
+    try {
+      const token = await getIdToken();
+      if (!token) return;
+
+      const res = await fetch('/api/files', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.files)) {
+          setVaultFiles(data.files);
+        }
+      }
+    } catch (err) {
+      console.error('[ChatPanel] Error loading vault files:', err);
+    } finally {
+      setIsVaultLoading(false);
+    }
+  }, [getIdToken]);
+
+  // Fetch vault files when drawer opens or switches to vault
+  useEffect(() => {
+    if (isExpanded && drawerTab === 'vault') {
+      loadVault();
+    }
+  }, [isExpanded, drawerTab, loadVault]);
 
   // Handle file picker selection
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,6 +103,7 @@ export default function ChatPanel({
     if (!files || files.length === 0) return;
 
     setIsExtracting(true);
+    setUploadError(null);
     try {
       const extracted: ChatAttachment[] = [];
       for (let i = 0; i < files.length; i++) {
@@ -72,12 +115,17 @@ export default function ChatPanel({
       } else {
         setLocalAttachments((prev) => [...prev, ...extracted]);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[ChatPanel] Error extracting attachments:', err);
+      setUploadError(err.message || 'File upload failed');
+      setTimeout(() => setUploadError(null), 8000);
     } finally {
       setIsExtracting(false);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
+      }
+      if (imageInputRef.current) {
+        imageInputRef.current.value = '';
       }
     }
   };
@@ -95,215 +143,456 @@ export default function ChatPanel({
     setLocalAttachments([]);
   };
 
+  const toggleFileExpansion = (id: string) => {
+    setExpandedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const filteredVaultFiles = vaultFiles.filter((f) => {
+    if (!vaultSearch.trim()) return true;
+    const q = vaultSearch.toLowerCase().trim();
+    return (
+      (f.original_filename || '').toLowerCase().includes(q) ||
+      (f.ai_description || '').toLowerCase().includes(q) ||
+      (f.file_type || '').toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="fixed bottom-0 left-0 right-0 z-40 flex flex-col items-center pointer-events-none pb-[calc(0.75rem+var(--sab))] px-3 sm:px-4">
-      {/* ── Slide-Up Collapsible Transcript Drawer ── */}
+      {/* ── Slide-Up Collapsible Transcript / Vault Drawer ── */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
             initial={{ height: 0, opacity: 0, y: 20 }}
-            animate={{ height: 340, opacity: 1, y: 0 }}
+            animate={{ height: 380, opacity: 1, y: 0 }}
             exit={{ height: 0, opacity: 0, y: 20 }}
             transition={{ duration: 0.35, ease: 'easeInOut' }}
             className="pointer-events-auto w-full max-w-3xl mb-3 bg-black/95 border border-[#4DE8E8]/30
                        rounded-2xl backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.9),0_0_30px_rgba(77,232,232,0.1)]
-                       overflow-hidden flex flex-col max-h-[50dvh]"
+                       overflow-hidden flex flex-col max-h-[55dvh]"
           >
-            {/* Drawer Header */}
-            <div className="flex items-center justify-between px-4 sm:px-5 py-2.5 border-b border-[#4DE8E8]/20 bg-[#4DE8E8]/5">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`w-2 h-2 rounded-full animate-pulse ${
-                    isFriday ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'bg-[#4DE8E8]'
-                  }`}
-                />
-                <span
-                  className={`text-xs font-mono tracking-widest uppercase font-medium ${
-                    isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+            {/* Drawer Header Tabs */}
+            <div className="flex items-center justify-between px-3 sm:px-5 py-2 border-b border-[#4DE8E8]/20 bg-[#4DE8E8]/5">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDrawerTab('transcript')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    drawerTab === 'transcript'
+                      ? isFriday
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(251,191,36,0.2)]'
+                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)]'
+                      : 'text-white/50 hover:text-white/80 border border-transparent'
                   }`}
                 >
-                  Live Neural Transcript ({messages.length})
-                </span>
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      drawerTab === 'transcript'
+                        ? isFriday
+                          ? 'bg-amber-400 animate-pulse'
+                          : 'bg-[#4DE8E8] animate-pulse'
+                        : 'bg-white/30'
+                    }`}
+                  />
+                  <span>TRANSCRIPT ({messages.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrawerTab('vault');
+                    loadVault();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${
+                    drawerTab === 'vault'
+                      ? isFriday
+                        ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40 shadow-[0_0_10px_rgba(251,191,36,0.2)]'
+                        : 'bg-[#4DE8E8]/20 text-[#4DE8E8] border border-[#4DE8E8]/40 shadow-[0_0_10px_rgba(77,232,232,0.2)]'
+                      : 'text-white/50 hover:text-white/80 border border-transparent'
+                  }`}
+                >
+                  <span>📁 VAULT / ATTACHMENTS</span>
+                  {vaultFiles.length > 0 && (
+                    <span className="text-[10px] px-1 rounded bg-[#4DE8E8]/20 text-[#4DE8E8] font-bold">
+                      {vaultFiles.length}
+                    </span>
+                  )}
+                </button>
               </div>
-              <button
-                onClick={onToggle}
-                className="text-[11px] font-mono text-[#4DE8E8]/70 hover:text-[#4DE8E8] active:text-[#4DE8E8] transition-colors cursor-pointer uppercase tracking-wider p-1"
-                aria-label="Close live transcript drawer"
-              >
-                CLOSE [✕]
-              </button>
+
+              <div className="flex items-center gap-2">
+                {drawerTab === 'vault' && (
+                  <button
+                    type="button"
+                    onClick={loadVault}
+                    disabled={isVaultLoading}
+                    className="text-[10px] font-mono text-[#4DE8E8]/70 hover:text-[#4DE8E8] transition-colors p-1 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    title="Refresh stored files databank"
+                  >
+                    <span className={isVaultLoading ? 'animate-spin inline-block' : ''}>⟳</span>
+                    <span className="hidden sm:inline">REFRESH</span>
+                  </button>
+                )}
+                <button
+                  onClick={onToggle}
+                  className="text-[11px] font-mono text-[#4DE8E8]/70 hover:text-[#4DE8E8] active:text-[#4DE8E8] transition-colors cursor-pointer uppercase tracking-wider p-1"
+                  aria-label="Close drawer"
+                >
+                  CLOSE [✕]
+                </button>
+              </div>
             </div>
 
-            {/* Messages Scroll Area */}
-            <div
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 space-y-3.5 scrollbar-thin"
-            >
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-40 text-center text-[#4DE8E8]/40 text-xs font-mono space-y-2">
-                  <div className="w-8 h-8 rounded-full border border-dashed border-[#4DE8E8]/30 flex items-center justify-center">
-                    <span className="text-[#4DE8E8]/60">✦</span>
+            {/* Upload Error Banner */}
+            {uploadError && (
+              <div className="px-4 py-2 bg-red-950/80 border-b border-red-500/40 text-red-300 font-mono text-xs flex items-center justify-between">
+                <span>⚠️ {uploadError}</span>
+                <button onClick={() => setUploadError(null)} className="text-red-400 hover:text-white text-xs">✕</button>
+              </div>
+            )}
+
+            {/* Tab Body: Transcript or Vault */}
+            {drawerTab === 'transcript' ? (
+              /* Messages Scroll Area */
+              <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 space-y-3.5 scrollbar-thin"
+              >
+                {messages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-40 text-center text-[#4DE8E8]/40 text-xs font-mono space-y-2">
+                    <div className="w-8 h-8 rounded-full border border-dashed border-[#4DE8E8]/30 flex items-center justify-center">
+                      <span className="text-[#4DE8E8]/60">✦</span>
+                    </div>
+                    <p>Neural transcript buffer empty. Speak aloud, enter a command, or drop an image/document.</p>
                   </div>
-                  <p>Neural transcript buffer empty. Speak aloud, enter a command, or drop an image/document.</p>
-                </div>
-              ) : (
-                messages.map((msg, i) => {
-                  const isLastMsg = i === messages.length - 1;
-                  const showStreamingCursor = isStreaming && isLastMsg && msg.role === 'assistant';
+                ) : (
+                  messages.map((msg, i) => {
+                    const isLastMsg = i === messages.length - 1;
+                    const showStreamingCursor = isStreaming && isLastMsg && msg.role === 'assistant';
 
-                  return (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className={`flex gap-2.5 ${
-                        msg.role === 'user' ? 'justify-end' : 'justify-start'
-                      }`}
-                    >
-                      {msg.role !== 'user' && (
-                        <div
-                          className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
-                            isFriday
-                              ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
-                              : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
-                          }`}
-                        >
-                          <span
-                            className={`text-[10px] font-mono font-bold ${
-                              isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
-                            }`}
-                          >
-                            {isFriday ? 'F' : 'J'}
-                          </span>
-                        </div>
-                      )}
-
-                      <div
-                        className={`max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 rounded-xl text-xs leading-relaxed font-mono ${
-                          msg.role === 'user'
-                            ? 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
-                            : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
+                    return (
+                      <motion.div
+                        key={i}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className={`flex gap-2.5 ${
+                          msg.role === 'user' ? 'justify-end' : 'justify-start'
                         }`}
                       >
-                        <div
-                          className={`text-[9px] uppercase mb-1.5 tracking-wider font-semibold ${
-                            msg.role === 'user'
-                              ? 'text-[#4DE8E8]/50'
-                              : isFriday
-                              ? 'text-amber-300/70'
-                              : 'text-[#4DE8E8]/50'
-                          }`}
-                        >
-                          {msg.role === 'user'
-                            ? 'USER'
-                            : isFriday
-                            ? 'FRIDAY CORE'
-                            : 'JARVIS CORE'}
-                        </div>
-
-                        {/* ── Multi-Modal Inline Attachments (Images & Documents) ── */}
-                        {msg.attachments && msg.attachments.length > 0 && (
-                          <div className="mb-2.5 space-y-2">
-                            {msg.attachments.map((att) => {
-                              if (att.type === 'image' && att.dataUrl) {
-                                return (
-                                  <div
-                                    key={att.id}
-                                    onClick={() => setSelectedImage({ url: att.dataUrl!, name: att.name, size: att.size })}
-                                    className="group/img relative rounded-lg overflow-hidden border border-[#4DE8E8]/35 bg-black/70 p-1.5 shadow-[0_0_15px_rgba(0,255,255,0.08)] cursor-pointer hover:border-[#4DE8E8] transition-all"
-                                    title="Click to expand visual telemetry"
-                                  >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={att.dataUrl}
-                                      alt={att.name}
-                                      className="max-h-52 sm:max-h-64 w-auto max-w-full rounded object-contain mx-auto block group-hover/img:scale-[1.01] transition-transform duration-200"
-                                    />
-                                    <div className="flex items-center justify-between px-2 py-1 bg-black/70 backdrop-blur-md text-[9px] font-mono text-[#4DE8E8]/90 mt-1.5 rounded">
-                                      <span className="truncate max-w-[200px] flex items-center gap-1">
-                                        <span>📷</span>
-                                        <span>{att.name}</span>
-                                      </span>
-                                      <span className="flex items-center gap-1.5">
-                                        <span>{Math.round(att.size / 1024)} KB</span>
-                                        <span className="text-[10px] text-[#4DE8E8] group-hover/img:text-white">⤢</span>
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              if (att.type === 'document') {
-                                return (
-                                  <div
-                                    key={att.id}
-                                    className="flex items-center gap-2.5 p-2.5 rounded-lg bg-black/60 border border-[#4DE8E8]/35 backdrop-blur-md"
-                                  >
-                                    <div className="w-8 h-8 rounded bg-[#4DE8E8]/10 border border-[#4DE8E8]/30 flex items-center justify-center flex-shrink-0 text-sm">
-                                      {att.mimeType === 'application/pdf' ? '📑' : '📄'}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-[11px] font-mono text-cyan-100 font-semibold truncate">
-                                        {att.name}
-                                      </div>
-                                      <div className="text-[9px] font-mono text-[#4DE8E8]/60 flex items-center gap-1.5 mt-0.5">
-                                        {att.pageCount ? <span>{att.pageCount} {att.pageCount === 1 ? 'Page' : 'Pages'}</span> : null}
-                                        {att.pageCount ? <span>•</span> : null}
-                                        <span>{Math.round(att.size / 1024)} KB</span>
-                                        <span>•</span>
-                                        <span className="text-emerald-400 font-semibold">PARSED CLIENT-SIDE</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })}
+                        {msg.role !== 'user' && (
+                          <div
+                            className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
+                              isFriday
+                                ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
+                                : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
+                            }`}
+                          >
+                            <span
+                              className={`text-[10px] font-mono font-bold ${
+                                isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
+                              }`}
+                            >
+                              {isFriday ? 'F' : 'J'}
+                            </span>
                           </div>
                         )}
 
-                        {/* Text Message Content */}
-                        <div className="whitespace-pre-wrap">{msg.content}</div>
-                        {showStreamingCursor && (
-                          <span className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom bg-[#4DE8E8] animate-pulse" />
-                        )}
-                      </div>
+                        <div
+                          className={`max-w-[85%] sm:max-w-[78%] px-3.5 py-2.5 rounded-xl text-xs leading-relaxed font-mono ${
+                            msg.role === 'user'
+                              ? 'bg-[#4DE8E8]/10 text-cyan-100 border border-[#4DE8E8]/30'
+                              : 'bg-white/[0.03] text-white/90 border border-[#4DE8E8]/15 shadow-[0_0_15px_rgba(77,232,232,0.05)]'
+                          }`}
+                        >
+                          <div
+                            className={`text-[9px] uppercase mb-1.5 tracking-wider font-semibold ${
+                              msg.role === 'user'
+                                ? 'text-[#4DE8E8]/50'
+                                : isFriday
+                                ? 'text-amber-300/70'
+                                : 'text-[#4DE8E8]/50'
+                            }`}
+                          >
+                            {msg.role === 'user'
+                              ? 'USER'
+                              : isFriday
+                              ? 'FRIDAY CORE'
+                              : 'JARVIS CORE'}
+                          </div>
 
-                      {msg.role === 'user' && (
-                        <div className="flex-shrink-0 w-6 h-6 rounded-md bg-white/10 border border-white/20 flex items-center justify-center">
-                          <span className="text-[10px] font-mono text-white/70 font-bold">U</span>
+                          {/* ── Multi-Modal Inline Attachments (Images & Documents) ── */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="mb-2.5 space-y-2">
+                              {msg.attachments.map((att) => {
+                                if (att.type === 'image' && att.dataUrl) {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      onClick={() => setSelectedImage({ url: att.dataUrl!, name: att.name, size: att.size })}
+                                      className="group/img relative rounded-lg overflow-hidden border border-[#4DE8E8]/35 bg-black/70 p-1.5 shadow-[0_0_15px_rgba(0,255,255,0.08)] cursor-pointer hover:border-[#4DE8E8] transition-all"
+                                      title="Click to expand visual telemetry"
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={att.dataUrl}
+                                        alt={att.name}
+                                        className="max-h-52 sm:max-h-64 w-auto max-w-full rounded object-contain mx-auto block group-hover/img:scale-[1.01] transition-transform duration-200"
+                                      />
+                                      <div className="flex items-center justify-between px-2 py-1 bg-black/70 backdrop-blur-md text-[9px] font-mono text-[#4DE8E8]/90 mt-1.5 rounded">
+                                        <span className="truncate max-w-[200px] flex items-center gap-1">
+                                          <span>📷</span>
+                                          <span>{att.name}</span>
+                                        </span>
+                                        <span className="flex items-center gap-1.5">
+                                          <span>{Math.round(att.size / 1024)} KB</span>
+                                          <span className="text-[10px] text-[#4DE8E8] group-hover/img:text-white">⤢</span>
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                if (att.type === 'document') {
+                                  return (
+                                    <div
+                                      key={att.id}
+                                      className="flex items-center gap-2.5 p-2.5 rounded-lg bg-black/60 border border-[#4DE8E8]/35 backdrop-blur-md"
+                                    >
+                                      <div className="w-8 h-8 rounded bg-[#4DE8E8]/10 border border-[#4DE8E8]/30 flex items-center justify-center flex-shrink-0 text-sm">
+                                        {att.mimeType === 'application/pdf' ? '📑' : '📄'}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-[11px] font-mono text-cyan-100 font-semibold truncate">
+                                          {att.name}
+                                        </div>
+                                        <div className="text-[9px] font-mono text-[#4DE8E8]/60 flex items-center gap-1.5 mt-0.5">
+                                          {att.pageCount ? <span>{att.pageCount} {att.pageCount === 1 ? 'Page' : 'Pages'}</span> : null}
+                                          {att.pageCount ? <span>•</span> : null}
+                                          <span>{Math.round(att.size / 1024)} KB</span>
+                                          <span>•</span>
+                                          <span className="text-emerald-400 font-semibold">PARSED CLIENT-SIDE</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          )}
+
+                          {/* Text Message Content */}
+                          <div className="whitespace-pre-wrap">{msg.content}</div>
+                          {showStreamingCursor && (
+                            <span className="inline-block w-[2px] h-[14px] ml-0.5 align-text-bottom bg-[#4DE8E8] animate-pulse" />
+                          )}
                         </div>
-                      )}
-                    </motion.div>
-                  );
-                })
-              )}
 
-              {/* Thinking loader — detects vision analysis vs general telemetry */}
-              {isLoading && !isStreaming && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex items-center gap-2 text-[#4DE8E8] text-xs font-mono p-1"
-                >
-                  <div className="w-4 h-4 rounded bg-[#4DE8E8]/20 border border-[#4DE8E8]/40 flex items-center justify-center">
-                    <span className="text-[9px] text-[#4DE8E8] animate-spin">⟳</span>
+                        {msg.role === 'user' && (
+                          <div className="flex-shrink-0 w-6 h-6 rounded-md bg-white/10 border border-white/20 flex items-center justify-center">
+                            <span className="text-[10px] font-mono text-white/70 font-bold">U</span>
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })
+                )}
+
+                {/* Thinking loader — detects vision analysis vs general telemetry */}
+                {isLoading && !isStreaming && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="flex items-center gap-2 text-[#4DE8E8] text-xs font-mono p-1"
+                  >
+                    <div className="w-4 h-4 rounded bg-[#4DE8E8]/20 border border-[#4DE8E8]/40 flex items-center justify-center">
+                      <span className="text-[9px] text-[#4DE8E8] animate-spin">⟳</span>
+                    </div>
+                    <span className="tracking-wider">
+                      {messages[messages.length - 1]?.attachments?.some((a) => a.type === 'image') || allStaged.some((a) => a.type === 'image')
+                        ? 'ANALYZING VISUAL INPUT...'
+                        : 'SYNTHESIZING TELEMETRY...'}
+                    </span>
+                  </motion.div>
+                )}
+
+                {/* Error box */}
+                {error && (
+                  <div className="text-red-400 text-xs font-mono px-3.5 py-2 bg-red-950/40 rounded-xl border border-red-500/30">
+                    ⚠️ System Notice: {error}
                   </div>
-                  <span className="tracking-wider">
-                    {messages[messages.length - 1]?.attachments?.some((a) => a.type === 'image') || allStaged.some((a) => a.type === 'image')
-                      ? 'ANALYZING VISUAL INPUT...'
-                      : 'SYNTHESIZING TELEMETRY...'}
-                  </span>
-                </motion.div>
-              )}
-
-              {/* Error box */}
-              {error && (
-                <div className="text-red-400 text-xs font-mono px-3.5 py-2 bg-red-950/40 rounded-xl border border-red-500/30">
-                  ⚠️ System Notice: {error}
+                )}
+              </div>
+            ) : (
+              /* Vault / Attachments Matrix */
+              <div className="flex-1 overflow-hidden flex flex-col">
+                {/* Search / Filter Sub-bar */}
+                <div className="px-3 sm:px-4 py-2 border-b border-[#4DE8E8]/15 bg-black/40 flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={vaultSearch}
+                      onChange={(e) => setVaultSearch(e.target.value)}
+                      placeholder="Search vault by filename, keyword, or AI description..."
+                      className="w-full bg-black/60 border border-[#4DE8E8]/30 rounded-lg pl-7 pr-3 py-1.5 text-xs text-cyan-100 font-mono placeholder-white/30 focus:outline-none focus:border-[#4DE8E8]"
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#4DE8E8]/60 text-xs">🔍</span>
+                  </div>
+                  {vaultSearch && (
+                    <button
+                      onClick={() => setVaultSearch('')}
+                      className="text-[10px] font-mono text-[#4DE8E8]/60 hover:text-white px-2 py-1 rounded bg-[#4DE8E8]/10"
+                    >
+                      CLEAR
+                    </button>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* File List / Grid Scroll Area */}
+                <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-3 space-y-2.5 scrollbar-thin">
+                  {isVaultLoading && vaultFiles.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 text-[#4DE8E8]/60 font-mono text-xs gap-2">
+                      <span className="w-5 h-5 border-2 border-[#4DE8E8] border-t-transparent rounded-full animate-spin" />
+                      <span>QUERYING ENCRYPTED STORAGE DATABANK...</span>
+                    </div>
+                  ) : filteredVaultFiles.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-48 text-center text-[#4DE8E8]/40 text-xs font-mono space-y-2 px-4">
+                      <div className="w-8 h-8 rounded-full border border-dashed border-[#4DE8E8]/30 flex items-center justify-center">
+                        <span>📁</span>
+                      </div>
+                      <p>
+                        {vaultSearch
+                          ? 'No files matching search criteria in databank.'
+                          : 'No permanently stored files yet. Upload images or documents via the buttons below to enable cross-session recall.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {filteredVaultFiles.map((file) => {
+                        const isExpandedFile = expandedFileIds.has(file.id);
+                        const fileSizeKb = file.file_size_bytes
+                          ? Math.round(file.file_size_bytes / 1024)
+                          : null;
+                        const dateFormatted = file.uploaded_at
+                          ? new Date(file.uploaded_at).toLocaleString(undefined, {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Recent';
+
+                        return (
+                          <motion.div
+                            key={file.id}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-2.5 rounded-xl bg-black/60 border border-[#4DE8E8]/20 hover:border-[#4DE8E8]/50 transition-all flex flex-col justify-between group"
+                          >
+                            <div>
+                              <div className="flex items-start gap-2.5">
+                                {/* Thumbnail / File Type Icon */}
+                                {file.file_type === 'image' && file.signed_url ? (
+                                  <div
+                                    onClick={() =>
+                                      setSelectedImage({
+                                        url: file.signed_url!,
+                                        name: file.original_filename || 'Image',
+                                        size: file.file_size_bytes || 0,
+                                        aiDescription: file.ai_description,
+                                      })
+                                    }
+                                    className="w-12 h-12 rounded-lg bg-black/80 border border-[#4DE8E8]/30 overflow-hidden flex-shrink-0 cursor-pointer hover:border-[#4DE8E8] transition-all"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={file.signed_url}
+                                      alt={file.original_filename || 'Uploaded Image'}
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg bg-[#4DE8E8]/10 border border-[#4DE8E8]/30 flex items-center justify-center flex-shrink-0 text-xl">
+                                    {file.file_type === 'image'
+                                      ? '📷'
+                                      : file.mime_type === 'application/pdf'
+                                      ? '📑'
+                                      : '📄'}
+                                  </div>
+                                )}
+
+                                {/* File Header & Details */}
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-mono font-semibold text-cyan-100 truncate" title={file.original_filename || file.storage_path}>
+                                    {file.original_filename || file.storage_path.split('/').pop()}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-[#4DE8E8]/60 flex items-center gap-1.5 mt-0.5">
+                                    <span className="px-1 py-0.2 rounded bg-[#4DE8E8]/15 text-[#4DE8E8] text-[9px] font-bold uppercase">
+                                      {file.file_type}
+                                    </span>
+                                    {fileSizeKb && <span>• {fileSizeKb} KB</span>}
+                                    <span>• {dateFormatted}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Expandable AI Recall Description */}
+                              {file.ai_description && (
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleFileExpansion(file.id)}
+                                    className="text-[10px] font-mono text-[#4DE8E8]/80 hover:text-[#4DE8E8] flex items-center gap-1 cursor-pointer transition-colors"
+                                  >
+                                    <span>✦ {isExpandedFile ? 'HIDE' : 'VIEW'} CACHED AI TELEMETRY</span>
+                                    <span>{isExpandedFile ? '▲' : '▼'}</span>
+                                  </button>
+                                  {isExpandedFile && (
+                                    <div className="mt-1.5 p-2 rounded-lg bg-black/80 border border-[#4DE8E8]/20 text-[10px] font-mono text-cyan-200/90 leading-relaxed whitespace-pre-wrap max-h-36 overflow-y-auto scrollbar-thin">
+                                      {file.ai_description}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action Links */}
+                            <div className="mt-2.5 pt-2 border-t border-[#4DE8E8]/10 flex items-center justify-between text-[10px] font-mono">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setInput(`What was in the file "${file.original_filename || file.storage_path}"?`);
+                                  setDrawerTab('transcript');
+                                }}
+                                className="text-[#4DE8E8] hover:text-white transition-colors cursor-pointer flex items-center gap-1"
+                              >
+                                <span>💬 ASK JARVIS</span>
+                              </button>
+                              {file.signed_url && (
+                                <a
+                                  href={file.signed_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  download={file.original_filename}
+                                  className="text-white/60 hover:text-[#4DE8E8] transition-colors flex items-center gap-1"
+                                >
+                                  <span>DOWNLOAD ⤓</span>
+                                </a>
+                              )}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -527,8 +816,14 @@ export default function ChatPanel({
               <img
                 src={selectedImage.url}
                 alt={selectedImage.name}
-                className="max-h-[72vh] w-auto max-w-full rounded-lg object-contain shadow-2xl border border-[#4DE8E8]/20"
+                className="max-h-[60vh] w-auto max-w-full rounded-lg object-contain shadow-2xl border border-[#4DE8E8]/20"
               />
+              {selectedImage.aiDescription && (
+                <div className="w-full mt-3 p-2.5 rounded-lg bg-black/80 border border-[#4DE8E8]/25 text-[11px] font-mono text-cyan-200/90 max-h-28 overflow-y-auto scrollbar-thin">
+                  <span className="text-[#4DE8E8] font-bold block mb-1">✦ CACHED AI VISION ANALYSIS:</span>
+                  {selectedImage.aiDescription}
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

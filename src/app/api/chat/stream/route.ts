@@ -19,6 +19,8 @@ import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
 import { checkEasterEgg } from '@/lib/llm/easter-eggs';
+import { uploadUserFile } from '@/lib/files/storage';
+import { insertUploadedFile } from '@/lib/files/metadata';
 import type { ChatMessage, VoicePersona, StreamChunk, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -160,7 +162,7 @@ export async function POST(req: NextRequest) {
       }).catch(() => {});
     }
 
-    // 5. Persist user message (non-blocking)
+    // 5. Persist user message and upload attachments to Supabase Storage
     if (lastUserMsg?.role === 'user') {
       Promise.resolve(
         supabase
@@ -171,6 +173,27 @@ export async function POST(req: NextRequest) {
             content: lastUserMsg.content,
           })
       ).catch(() => {});
+
+      if (lastUserMsg.attachments && lastUserMsg.attachments.length > 0) {
+        for (const att of lastUserMsg.attachments) {
+          const payload = att.dataUrl || att.extractedText || '';
+          if (payload) {
+            Promise.resolve(
+              uploadUserFile(
+                profileUid,
+                att.id || crypto.randomUUID(),
+                att.name,
+                payload,
+                att.mimeType
+              )
+            )
+              .then(({ storagePath }) => {
+                att.storagePath = storagePath;
+              })
+              .catch((upErr) => console.warn('[Chat Stream API] File storage warning:', upErr));
+          }
+        }
+      }
     }
 
     // 6. Resolve memories and settings
@@ -448,6 +471,25 @@ export async function POST(req: NextRequest) {
                 provider_used: providerUsed || null,
               })
           ).catch(() => {});
+
+          // Persist uploaded file metadata with AI description for long-term recall
+          if (lastUserMsg?.attachments && lastUserMsg.attachments.length > 0) {
+            Promise.resolve().then(async () => {
+              for (const att of lastUserMsg.attachments || []) {
+                const storagePath = att.storagePath || `${profileUid}/${att.id}-${att.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                await insertUploadedFile({
+                  profile_id: profile.id,
+                  conversation_id: conversationId,
+                  storage_path: storagePath,
+                  file_type: att.type,
+                  original_filename: att.name,
+                  mime_type: att.mimeType,
+                  file_size_bytes: att.size,
+                  ai_description: finalContent,
+                });
+              }
+            }).catch((metaErr) => console.warn('[Chat Stream API] File metadata persistence warning:', metaErr));
+          }
 
           // Background memory extraction
           if (lastUserMsg?.content && finalContent) {

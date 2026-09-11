@@ -27,9 +27,25 @@ export interface ChatAttachment {
   dataUrl?: string; // base64 data for images
   extractedText?: string; // extracted text content for documents
   pageCount?: number;
+  storagePath?: string;
 }
 
 export type ClearanceLevel = 1 | 5 | 9;
+
+/** Uploaded file record tracked in Supabase database */
+export interface UploadedFileRecord {
+  id: string;
+  profile_id: string;
+  conversation_id?: string | null;
+  storage_path: string;
+  file_type: 'image' | 'document';
+  original_filename: string;
+  mime_type: string;
+  file_size_bytes: number;
+  ai_description: string;
+  uploaded_at: string;
+  signed_url?: string;
+}
 
 // ── Database Models ──────────────────────────
 

@@ -12,6 +12,7 @@ export const TOOL_CLEARANCE_MAP: Record<string, ClearanceLevel> = {
   calculate: 1,
   web_search: 1,
   system_diagnostics: 1,
+  recall_uploaded_files: 1,
   remember: 5,
   recall_memories: 5,
   execute_protocol: 5,
@@ -186,6 +187,35 @@ export const toolDefinitions: ToolDefinition[] = [
           },
         },
         required: ['calculation_type'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'recall_uploaded_files',
+      description:
+        'Retrieve and recall past uploaded images, photos, visual telemetry scans, or documents previously shared by the operator. Use when the user asks about a photo, screenshot, image, or document sent earlier (e.g. "what was in that photo I sent yesterday?", "the document from earlier", "that screenshot"). Returns stored AI descriptions and metadata.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description:
+              'Optional search term or keyword to find relevant files by filename or content description (e.g. "radar", "schematic", "receipt", "screenshot", "flight manual")',
+          },
+          file_type: {
+            type: 'string',
+            enum: ['image', 'document', 'all'],
+            description: 'Filter by file type: "image", "document", or "all"',
+          },
+          time_range: {
+            type: 'string',
+            enum: ['today', 'yesterday', 'this_week', 'all'],
+            description: 'Optional time filter: "today", "yesterday", "this_week", or "all"',
+          },
+        },
+        required: [],
       },
     },
   },

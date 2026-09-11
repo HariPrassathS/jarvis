@@ -79,7 +79,8 @@ export async function extractPdfText(file: File): Promise<{ text: string; pageCo
   }
 }
 
-// Maximum allowed image size (10MB)
+// Maximum allowed file size for Supabase Storage (50MB) and vision model input (10MB)
+const MAX_STORAGE_BYTES = 50 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_IMAGE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
@@ -92,15 +93,32 @@ export async function processUploadedFile(file: File): Promise<ChatAttachment> {
   const mimeType = (file.type || '').toLowerCase();
   const size = file.size;
 
+  // Global 50MB Storage Limit check
+  if (size > MAX_STORAGE_BYTES) {
+    throw new Error(
+      `Visual/document telemetry exceeds maximum storage bandwidth limit of 50MB (${(
+        size /
+        (1024 * 1024)
+      ).toFixed(1)}MB), sir. Please crop or compress the file.`
+    );
+  }
+
   // 1. Image Files (PNG, JPG, WebP)
   if (mimeType.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(fileName)) {
-    // Check size limit (10MB)
+    // Check vision model size limit (10MB)
     if (size > MAX_IMAGE_BYTES) {
-      throw new Error(`Visual telemetry exceeds maximum bandwidth limit of 10MB (${(size / (1024 * 1024)).toFixed(1)}MB), sir. Please crop or compress the image.`);
+      throw new Error(
+        `Visual telemetry exceeds maximum bandwidth limit of 10MB (${(
+          size /
+          (1024 * 1024)
+        ).toFixed(1)}MB), sir. Please crop or compress the image.`
+      );
     }
 
     // Check supported format
-    const isSupportedMime = SUPPORTED_IMAGE_MIMES.some(m => mimeType.includes(m.replace('image/', ''))) || /\.(png|jpe?g|webp)$/i.test(fileName);
+    const isSupportedMime =
+      SUPPORTED_IMAGE_MIMES.some((m) => mimeType.includes(m.replace('image/', ''))) ||
+      /\.(png|jpe?g|webp)$/i.test(fileName);
     if (!isSupportedMime) {
       throw new Error(`Visual sensor array only accepts JPG, PNG, and WebP formats, sir.`);
     }
@@ -118,13 +136,18 @@ export async function processUploadedFile(file: File): Promise<ChatAttachment> {
 
   // 2. PDF Documents
   if (mimeType === 'application/pdf' || fileName.toLowerCase().endsWith('.pdf')) {
-    const { text, pageCount } = await extractPdfText(file);
+    const [{ text, pageCount }, dataUrl] = await Promise.all([
+      extractPdfText(file),
+      readFileAsDataUrl(file).catch(() => undefined),
+    ]);
+
     return {
       id: fileId,
       type: 'document',
       name: fileName,
       mimeType: 'application/pdf',
       size,
+      dataUrl,
       extractedText: text,
       pageCount,
     };
@@ -132,11 +155,13 @@ export async function processUploadedFile(file: File): Promise<ChatAttachment> {
 
   // 3. Plain Text, Markdown, Code, CSV, JSON Documents
   try {
-    let rawText = await file.text();
-    let truncated = false;
+    const rawText = await file.text();
+    const dataUrl = await readFileAsDataUrl(file).catch(() => undefined);
+    let truncatedText = rawText;
     if (rawText.length > MAX_DOCUMENT_CHARS) {
-      rawText = rawText.slice(0, MAX_DOCUMENT_CHARS) + '\n\n[TELEMETRY BUFFER NOTICE: File truncated due to context limit]';
-      truncated = true;
+      truncatedText =
+        rawText.slice(0, MAX_DOCUMENT_CHARS) +
+        '\n\n[TELEMETRY BUFFER NOTICE: File truncated due to context limit]';
     }
 
     return {
@@ -145,16 +170,19 @@ export async function processUploadedFile(file: File): Promise<ChatAttachment> {
       name: fileName,
       mimeType: mimeType || 'text/plain',
       size,
-      extractedText: rawText,
+      dataUrl,
+      extractedText: truncatedText,
       pageCount: 1,
     };
   } catch (textErr: any) {
+    const dataUrl = await readFileAsDataUrl(file).catch(() => undefined);
     return {
       id: fileId,
       type: 'document',
       name: fileName,
-      mimeType,
+      mimeType: mimeType || 'application/octet-stream',
       size,
+      dataUrl,
       extractedText: `[Could not read text from ${fileName}: ${textErr?.message || 'Binary file'}]`,
       pageCount: 1,
     };

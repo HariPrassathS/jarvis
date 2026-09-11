@@ -18,6 +18,8 @@ import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
 import { queryCache } from '@/lib/cache/query-cache';
 import { checkEasterEgg } from '@/lib/llm/easter-eggs';
+import { uploadUserFile } from '@/lib/files/storage';
+import { insertUploadedFile } from '@/lib/files/metadata';
 import type { ChatMessage, VoicePersona, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -149,7 +151,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5. Asynchronously persist user message (non-blocking for ultra-fast LLM invocation)
+    // 5. Asynchronously persist user message and upload attachments to Supabase Storage
+    const uploadedAttachments: Array<{
+      id: string;
+      storagePath: string;
+      name: string;
+      type: 'image' | 'document';
+      mimeType: string;
+      size: number;
+    }> = [];
+
     if (lastUserMsg?.role === 'user') {
       Promise.resolve(
         supabase
@@ -160,6 +171,36 @@ export async function POST(req: NextRequest) {
             content: lastUserMsg.content,
           })
       ).catch(() => {});
+
+      // Upload raw files to user-files bucket
+      if (lastUserMsg.attachments && lastUserMsg.attachments.length > 0) {
+        for (const att of lastUserMsg.attachments) {
+          const payload = att.dataUrl || att.extractedText || '';
+          if (payload) {
+            Promise.resolve(
+              uploadUserFile(
+                profileUid,
+                att.id || crypto.randomUUID(),
+                att.name,
+                payload,
+                att.mimeType
+              )
+            )
+              .then(({ storagePath }) => {
+                att.storagePath = storagePath;
+                uploadedAttachments.push({
+                  id: att.id,
+                  storagePath,
+                  name: att.name,
+                  type: att.type,
+                  mimeType: att.mimeType,
+                  size: att.size,
+                });
+              })
+              .catch((upErr) => console.warn('[Chat API] File storage warning:', upErr));
+          }
+        }
+      }
     }
 
     // 6. Fast parallel resolution of memories and preferred provider / persona
@@ -350,6 +391,25 @@ export async function POST(req: NextRequest) {
           provider_used: response.provider_used,
         })
     ).catch(() => {});
+
+    // 10.5. Asynchronously persist uploaded file metadata with AI description for long-term recall
+    if (lastUserMsg?.attachments && lastUserMsg.attachments.length > 0) {
+      Promise.resolve().then(async () => {
+        for (const att of lastUserMsg.attachments || []) {
+          const storagePath = att.storagePath || `${profileUid}/${att.id}-${att.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+          await insertUploadedFile({
+            profile_id: profile.id,
+            conversation_id: conversationId,
+            storage_path: storagePath,
+            file_type: att.type,
+            original_filename: att.name,
+            mime_type: att.mimeType,
+            file_size_bytes: att.size,
+            ai_description: finalContent,
+          });
+        }
+      }).catch((metaErr) => console.warn('[Chat API] File metadata persistence warning:', metaErr));
+    }
 
     // 11. Background durable memory extraction (fire-and-forget, zero latency overhead on client)
     if (lastUserMsg?.content && finalContent) {

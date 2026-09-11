@@ -47,7 +47,22 @@ create table if not exists settings (
   voice_enabled boolean default true,
   preferred_provider text default 'groq',
   theme text default 'dark-hud',
-  voice_persona text default 'jarvis'
+  voice_persona text default 'jarvis',
+  clearance_level integer default 9
+);
+
+-- uploaded_files: permanent metadata tracking for operator images & documents
+create table if not exists uploaded_files (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid references profiles(id) on delete cascade,
+  conversation_id uuid references conversations(id) on delete set null,
+  storage_path text not null,           -- path within the user-files bucket (e.g. {firebase_uid}/{file_id}-{filename})
+  file_type text not null,              -- 'image' | 'document'
+  original_filename text,
+  mime_type text,
+  file_size_bytes integer,
+  ai_description text,                  -- the LLM's analysis/summary cached for long-term recall
+  uploaded_at timestamptz default now()
 );
 
 -- provider_usage: global daily request & token budget tracking per LLM provider
@@ -70,6 +85,9 @@ create index if not exists idx_messages_conversation_id on messages(conversation
 create index if not exists idx_messages_created_at on messages(created_at);
 create index if not exists idx_memory_profile_id on memory(profile_id);
 create index if not exists idx_memory_key on memory(profile_id, key);
+create index if not exists idx_uploaded_files_profile_id on uploaded_files(profile_id);
+create index if not exists idx_uploaded_files_conversation_id on uploaded_files(conversation_id);
+create index if not exists idx_uploaded_files_uploaded_at on uploaded_files(uploaded_at);
 
 -- ── Row Level Security ─────────────────────────
 
@@ -78,6 +96,7 @@ alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table memory enable row level security;
 alter table settings enable row level security;
+alter table uploaded_files enable row level security;
 
 -- Profiles: users can only read their own profile
 create policy "Users can view own profile"
@@ -138,3 +157,48 @@ create policy "Users can manage own settings"
   with check (profile_id in (
     select id from profiles where firebase_uid = current_setting('app.firebase_uid', true)
   ));
+
+-- Uploaded Files: users can only access their own uploaded file metadata
+create policy "Users can view own uploaded files"
+  on uploaded_files for select
+  using (profile_id in (
+    select id from profiles where firebase_uid = current_setting('app.firebase_uid', true)
+  ));
+
+create policy "Users can insert own uploaded files"
+  on uploaded_files for insert
+  with check (profile_id in (
+    select id from profiles where firebase_uid = current_setting('app.firebase_uid', true)
+  ));
+
+create policy "Users can delete own uploaded files"
+  on uploaded_files for delete
+  using (profile_id in (
+    select id from profiles where firebase_uid = current_setting('app.firebase_uid', true)
+  ));
+
+-- ── Supabase Storage Policies (Bucket: 'user-files') ──
+-- Scoped to folder prefix matching operator's firebase_uid: {firebase_uid}/{file_id}
+create policy "Users can upload their own files"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'user-files' and
+    (storage.foldername(name))[1] = current_setting('app.firebase_uid', true)
+  );
+
+create policy "Users can view their own files"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'user-files' and
+    (storage.foldername(name))[1] = current_setting('app.firebase_uid', true)
+  );
+
+create policy "Users can delete their own files"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'user-files' and
+    (storage.foldername(name))[1] = current_setting('app.firebase_uid', true)
+  );
