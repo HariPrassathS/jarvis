@@ -171,3 +171,50 @@ body {
   background: rgba(77, 232, 232, 0.35);
   color: #ffffff;
 }
+
+/* ──────────────────────────────────────────── */
+/* HUD Micro-Interactions & Tiered Components    */
+/* ──────────────────────────────────────────── */
+
+.hud-glass-card {
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(77, 232, 232, 0.25);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85), 0 0 15px rgba(77, 232, 232, 0.08);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.hud-glass-card:hover {
+  border-color: rgba(77, 232, 232, 0.55);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.9), 0 0 25px rgba(77, 232, 232, 0.18);
+}
+
+.hud-text-tier1 {
+  font-family: var(--font-mono), monospace;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #e0ffff;
+  text-shadow: 0 0 10px rgba(77, 232, 232, 0.7), 0 0 22px rgba(77, 232, 232, 0.35);
+}
+
+.hud-text-tier1-friday {
+  font-family: var(--font-mono), monospace;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #fff1f2;
+  text-shadow: 0 0 10px rgba(251, 113, 133, 0.7), 0 0 22px rgba(251, 113, 133, 0.35);
+}
+
+.hud-interactive-chip {
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-interactive-chip:active {
+  transform: scale(0.96);
+}
+
