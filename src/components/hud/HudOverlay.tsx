@@ -16,6 +16,7 @@ interface HudOverlayProps {
   isMicKilled?: boolean;
   onToggleMicKill?: () => void;
   onOpenPrivacyModal?: () => void;
+  onOpenCommandPalette?: () => void;
   onPersonaChange?: (persona: VoicePersona) => void;
   onNewChat?: () => void;
   onSignOut?: () => void;
@@ -28,6 +29,7 @@ export default function HudOverlay({
   isMicKilled = false,
   onToggleMicKill,
   onOpenPrivacyModal,
+  onOpenCommandPalette,
   onPersonaChange,
   onNewChat,
   onSignOut,
@@ -170,6 +172,27 @@ export default function HudOverlay({
                 <span className="sm:hidden">F</span>
               </button>
             </div>
+          )}
+
+          {/* Command Palette Button */}
+          {onOpenCommandPalette && (
+            <motion.button
+              onClick={onOpenCommandPalette}
+              whileTap={{ scale: 0.94 }}
+              className={`text-[9.5px] sm:text-[10px] font-mono tracking-wider transition-colors uppercase cursor-pointer py-1 px-2 rounded-md border flex items-center gap-1.5 ${
+                isFriday
+                  ? 'border-amber-500/30 text-amber-300/80 hover:text-amber-200 hover:border-amber-500/60 bg-amber-950/30'
+                  : 'border-[#00FFFF]/30 text-[#00FFFF]/80 hover:text-[#00FFFF] hover:border-[#00FFFF]/60 bg-cyan-950/30'
+              }`}
+              title="Open Command Palette (Cmd+K / Ctrl+K)"
+              aria-label="Open Command Palette"
+            >
+              <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <span className="hidden sm:inline">CMD</span>
+              <span className="text-[9px] px-1 py-0.2 rounded bg-white/10 font-bold">⌘K</span>
+            </motion.button>
           )}
 
           <div className="w-px h-3 bg-white/15 hidden sm:block" />

@@ -18,6 +18,7 @@ import { recallMemories } from '@/lib/tools/memory';
 import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
+import { checkEasterEgg } from '@/lib/llm/easter-eggs';
 import type { ChatMessage, VoicePersona, StreamChunk, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -220,7 +221,51 @@ export async function POST(req: NextRequest) {
 
     const authorizedTools = getToolsForClearance(operatorClearance);
 
-    // 7. Build system prompt with relationship intelligence
+    // 7. Check for Stark easter eggs before hitting LLM
+    const easterEgg = checkEasterEgg(lastUserMsg?.content || '', effectivePersona);
+    if (easterEgg.matched && easterEgg.response) {
+      const responseText = easterEgg.response;
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          const sendSSE = (data: StreamChunk) => {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          };
+
+          const words = responseText.split(' ');
+          for (let i = 0; i < words.length; i++) {
+            const token = i === words.length - 1 ? words[i] : words[i] + ' ';
+            sendSSE({ token });
+            await new Promise((r) => setTimeout(r, 18));
+          }
+
+          sendSSE({ done: true, provider_used: 'stark-archive' as any });
+
+          // Persist assistant response to Supabase
+          Promise.resolve(
+            supabase.from('messages').insert({
+              conversation_id: conversationId,
+              role: 'assistant',
+              content: responseText,
+              provider_used: 'stark-archive',
+            })
+          ).catch((e) => console.warn('[Chat Stream API] Easter egg persistence warning:', e));
+
+          controller.close();
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+
+    // 8. Build system prompt with relationship intelligence
     const systemPrompt = buildSystemPrompt(
       profile.display_name,
       profile.email || profileEmail,
@@ -235,7 +280,7 @@ export async function POST(req: NextRequest) {
       ...contextualMessages,
     ];
 
-    // 8. Create SSE stream
+    // 9. Create SSE stream
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({

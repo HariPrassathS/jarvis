@@ -27,6 +27,8 @@ import SignInButton from '@/components/auth/SignInButton';
 import IntelligenceSelection from '@/components/auth/IntelligenceSelection';
 import MobileDebugOverlay from '@/components/debug/MobileDebugOverlay';
 import PrivacyModal from '@/components/privacy/PrivacyModal';
+import CommandPalette from '@/components/hud/CommandPalette';
+import SessionDebrief from '@/components/hud/SessionDebrief';
 import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 import { playStarkChime } from '@/lib/audio/stark-chime';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
@@ -150,6 +152,24 @@ export default function Home() {
   // ── Privacy & Data Governance Modal State ──
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [purgeNotification, setPurgeNotification] = useState<string | null>(null);
+
+  // ── Command Palette & Mission Debrief State ──
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isSessionDebriefOpen, setIsSessionDebriefOpen] = useState(false);
+  const [sessionStartTime] = useState<number>(() => Date.now());
+  const [sessionQueryCount, setSessionQueryCount] = useState(0);
+
+  // Global keyboard listener for Cmd+K / Ctrl+K
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // ── Mobile Telemetry Debug Overlay Toggle (3-tap gesture) ──
   const [debugOverlayVisible, setDebugOverlayVisible] = useState(false);
@@ -406,6 +426,7 @@ export default function Home() {
 
       stopSpeaking();
       sendMessage(text, persona);
+      setSessionQueryCount((c) => c + 1);
     },
     [sendMessage, stopSpeaking, persona, isSpeaking]
   );
@@ -665,6 +686,7 @@ export default function Home() {
       stopSpeaking();
       sendMessage(content, persona, attachments);
       setStagedAttachments([]);
+      setSessionQueryCount((c) => c + 1);
     },
     [sendMessage, stopSpeaking, persona]
   );
@@ -676,13 +698,20 @@ export default function Home() {
     clearChat();
   }, [clearChat, stopSpeaking]);
 
-  const handleSignOut = useCallback(async () => {
+  const handleInitiateSignOut = useCallback(() => {
     stopSpeaking();
+    setIsSessionDebriefOpen(true);
+  }, [stopSpeaking]);
+
+  const handleCompleteSignOut = useCallback(async () => {
+    stopSpeaking();
+    clearChat();
+    setIsSessionDebriefOpen(false);
     await signOut();
     setNarrativePhase('phase0_dormant');
     setEntranceStep('ready');
     setTitleRevealCount(TITLE_CHARS.length);
-  }, [signOut, stopSpeaking]);
+  }, [signOut, clearChat, stopSpeaking]);
 
   const handleAccountPurged = useCallback(async () => {
     stopSpeaking();
@@ -760,9 +789,10 @@ export default function Home() {
               isMicKilled={isMicKilled}
               onToggleMicKill={toggleMicKill}
               onOpenPrivacyModal={() => setIsPrivacyModalOpen(true)}
+              onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
               onPersonaChange={handlePersonaChange}
               onNewChat={handleNewChat}
-              onSignOut={handleSignOut}
+              onSignOut={handleInitiateSignOut}
             />
           </motion.div>
         )}
@@ -1130,6 +1160,37 @@ export default function Home() {
         getIdToken={async () => (user ? await user.getIdToken() : null)}
         onAccountPurged={handleAccountPurged}
         persona={persona}
+        reducedMotion={reducedMotion}
+      />
+
+      {/* ═══ COMMAND PALETTE (CMD+K / CTRL+K) ═══ */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        persona={persona}
+        onSelectPrompt={(prompt) => {
+          stopSpeaking();
+          sendMessage(prompt, persona);
+          setSessionQueryCount((c) => c + 1);
+        }}
+        onSwitchPersona={handlePersonaChange}
+        onToggleMicKill={toggleMicKill}
+        isMicKilled={isMicKilled}
+        onOpenPrivacy={() => setIsPrivacyModalOpen(true)}
+        onNewChat={handleNewChat}
+        onInitiateSignOut={handleInitiateSignOut}
+        reducedMotion={reducedMotion}
+      />
+
+      {/* ═══ MISSION DEBRIEF ON LOGOUT ═══ */}
+      <SessionDebrief
+        isOpen={isSessionDebriefOpen}
+        operatorName={firstName}
+        persona={persona}
+        clearanceLevel={clearanceLevel || profile?.clearance_level || 9}
+        queryCount={sessionQueryCount}
+        sessionStartTime={sessionStartTime}
+        onCompleteSignOut={handleCompleteSignOut}
         reducedMotion={reducedMotion}
       />
 

@@ -17,6 +17,7 @@ import { extractAndStoreMemories } from '@/lib/llm/memory-extractor';
 import { jarvisCache } from '@/lib/llm/cache';
 import { operatorRateLimiter } from '@/lib/ratelimit/token-bucket';
 import { queryCache } from '@/lib/cache/query-cache';
+import { checkEasterEgg } from '@/lib/llm/easter-eggs';
 import type { ChatMessage, VoicePersona, ClearanceLevel } from '@/types';
 
 export async function POST(req: NextRequest) {
@@ -219,7 +220,29 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 6.7. Resolve functional clearance level (1, 5, or 9)
+    // 6.7. Check for Stark easter eggs
+    const easterEgg = checkEasterEgg(lastUserMsg?.content || '', effectivePersona);
+    if (easterEgg.matched && easterEgg.response) {
+      const responseText = easterEgg.response;
+      Promise.resolve(
+        supabase.from('messages').insert({
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: responseText,
+          provider_used: 'stark-archive',
+        })
+      ).catch((e) => console.warn('[Chat API] Easter egg persistence warning:', e));
+
+      return NextResponse.json({
+        message: responseText,
+        reply: responseText,
+        provider_used: 'stark-archive',
+        conversation_id: conversationId,
+        voice_persona: effectivePersona,
+      });
+    }
+
+    // 6.8. Resolve functional clearance level (1, 5, or 9)
     const operatorClearance: ClearanceLevel =
       settingsObj?.clearance_level ||
       profile?.clearance_level ||

@@ -322,7 +322,8 @@ export default function JarvisOrb({
   }, [audioLevels, colorTheme, state]);
 
   // Plasma churn speed multiplier from voice volume
-  const plasmaDriftMul = 1 + volume * 1.2;
+  const isThinking = effectiveState === 'thinking';
+  const plasmaDriftMul = isThinking ? 4.2 + volume * 2.0 : 1 + volume * 1.2;
 
   // ── Dynamic boot narrative animation timings & persona kinematics ──
   const radarSweepDuration = useMemo(() => {
@@ -330,8 +331,9 @@ export default function JarvisOrb({
     if (bootPhase === 'verifying') return '3s';
     if (bootPhase === 'confirmed') return '1.4s';
     if (effectiveState === 'receiving') return '1.2s';
-    if (isFriday) return effectiveState === 'thinking' ? '2.8s' : '4.8s';
-    return effectiveState === 'thinking' ? '3.5s' : '7s';
+    if (effectiveState === 'thinking') return isFriday ? '1.2s' : '1.5s';
+    if (isFriday) return '4.8s';
+    return '7s';
   }, [bootPhase, effectiveState, isFriday]);
 
   const ring1Duration = useMemo(() => {
@@ -339,6 +341,7 @@ export default function JarvisOrb({
     if (bootPhase === 'verifying') return '8s';
     if (bootPhase === 'confirmed') return '2s';
     if (effectiveState === 'receiving') return '3.5s';
+    if (effectiveState === 'thinking') return '3.5s';
     if (isFriday) return '16s';
     return '25s';
   }, [bootPhase, effectiveState, isFriday]);
@@ -348,16 +351,19 @@ export default function JarvisOrb({
     if (bootPhase === 'verifying') return '5s';
     if (bootPhase === 'confirmed') return '1.5s';
     if (effectiveState === 'receiving') return '2.2s';
-    if (isFriday) return effectiveState === 'thinking' ? '5.2s' : '9s';
-    return effectiveState === 'thinking' ? '7s' : '14s';
+    if (effectiveState === 'thinking') return '2.6s';
+    if (isFriday) return '9s';
+    return '14s';
   }, [bootPhase, effectiveState, isFriday]);
 
   const coreBrightnessFilter = useMemo(() => {
     if (bootPhase === 'handshake') return 'brightness(1.24) contrast(1.1)';
     if (bootPhase === 'confirmed')
       return `brightness(1.5) drop-shadow(0 0 28px ${isFriday ? '#fb7185' : '#00ffff'})`;
+    if (isThinking)
+      return 'brightness(1.25) contrast(1.15) drop-shadow(0 0 20px rgba(245, 158, 11, 0.75))';
     return 'none';
-  }, [bootPhase, isFriday]);
+  }, [bootPhase, isFriday, isThinking]);
 
   const stageSizeClasses = useMemo(() => {
     if (size === 'sm') {
@@ -386,13 +392,20 @@ export default function JarvisOrb({
           opacity:
             bootPhase === 'confirmed'
               ? [0.6, 0.95, 0.6]
+              : isThinking
+              ? [0.35, 0.75, 0.35]
               : state === 'idle'
               ? [0.22, 0.44, 0.22]
               : [0.28, 0.55, 0.28],
-          scale: bootPhase === 'confirmed' ? [1, 1.18, 1] : [0.94, 1.10, 0.94],
+          scale:
+            bootPhase === 'confirmed'
+              ? [1, 1.18, 1]
+              : isThinking
+              ? [0.92, 1.14, 0.92]
+              : [0.94, 1.10, 0.94],
         }}
         transition={{
-          duration: bootPhase === 'confirmed' ? 0.6 : state === 'thinking' ? 2 : 4.5,
+          duration: bootPhase === 'confirmed' ? 0.6 : isThinking ? 0.9 : 4.5,
           repeat: bootPhase === 'confirmed' ? 1 : Infinity,
           ease: 'easeInOut',
         }}
@@ -581,7 +594,7 @@ export default function JarvisOrb({
           {/* ═══ 3 INDEPENDENTLY-DRIFTING COLORED PLASMA BLOBS ═══
               Vibrant, high-opacity, moderate-blur masses (clearly discernible in any screenshot). */}
 
-          {/* Plasma Blob 1: Vibrant Cyan (Electric Primary) — 48% width, blur 8px, opacity 0.88 */}
+          {/* Plasma Blob 1: Vibrant Cyan / Amber (Electric Primary) — 48% width, blur 8px, opacity 0.88 */}
           <motion.div
             className="absolute rounded-full pointer-events-none blur-[6px] sm:blur-[8px] md:blur-[10px]"
             style={{
@@ -589,21 +602,23 @@ export default function JarvisOrb({
               height: '48%',
               background: `radial-gradient(circle, ${colorTheme.plasma1} 0%, ${colorTheme.plasma1}bb 45%, transparent 75%)`,
               mixBlendMode: 'screen',
-              opacity: 0.88,
+              opacity: isThinking ? 0.95 : 0.88,
             }}
             animate={{
-              x: [-12, 14, -8, 8, -12],
-              y: [-8, 8, 12, -10, -8],
-              scale: [0.9 + volume * 0.2, 1.15 + volume * 0.15, 0.95 + volume * 0.2, 1.1 + volume * 0.15, 0.9 + volume * 0.2],
+              x: isThinking ? [-20, 22, -18, 16, -20] : [-12, 14, -8, 8, -12],
+              y: isThinking ? [-16, 18, 20, -18, -16] : [-8, 8, 12, -10, -8],
+              scale: isThinking
+                ? [0.75, 1.35, 0.82, 1.28, 0.75]
+                : [0.9 + volume * 0.2, 1.15 + volume * 0.15, 0.95 + volume * 0.2, 1.1 + volume * 0.15, 0.9 + volume * 0.2],
             }}
             transition={{
-              duration: 8 / plasmaDriftMul,
+              duration: isThinking ? 1.35 : 8 / plasmaDriftMul,
               repeat: Infinity,
-              ease: 'easeInOut',
+              ease: isThinking ? 'easeInOut' : 'easeInOut',
             }}
           />
 
-          {/* Plasma Blob 2: Vibrant Violet / Magenta (Secondary Contrast) — 42% width, blur 8px, opacity 0.82 */}
+          {/* Plasma Blob 2: Vibrant Violet / Orange (Secondary Contrast) — 42% width, blur 8px, opacity 0.82 */}
           <motion.div
             className="absolute rounded-full pointer-events-none blur-[6px] sm:blur-[8px] md:blur-[10px]"
             style={{
@@ -611,15 +626,17 @@ export default function JarvisOrb({
               height: '42%',
               background: `radial-gradient(circle, ${colorTheme.plasma2} 0%, ${colorTheme.plasma2}aa 45%, transparent 75%)`,
               mixBlendMode: 'screen',
-              opacity: 0.82,
+              opacity: isThinking ? 0.9 : 0.82,
             }}
             animate={{
-              x: [12, -14, 12, -8, 12],
-              y: [12, -8, -10, 8, 12],
-              scale: [1.05 + volume * 0.2, 0.85 + volume * 0.15, 1.12 + volume * 0.2, 0.9 + volume * 0.15, 1.05 + volume * 0.2],
+              x: isThinking ? [22, -24, 20, -18, 22] : [12, -14, 12, -8, 12],
+              y: isThinking ? [20, -16, -20, 18, 20] : [12, -8, -10, 8, 12],
+              scale: isThinking
+                ? [1.25, 0.72, 1.32, 0.78, 1.25]
+                : [1.05 + volume * 0.2, 0.85 + volume * 0.15, 1.12 + volume * 0.2, 0.9 + volume * 0.15, 1.05 + volume * 0.2],
             }}
             transition={{
-              duration: 6.5 / plasmaDriftMul,
+              duration: isThinking ? 1.1 : 6.5 / plasmaDriftMul,
               repeat: Infinity,
               ease: 'easeInOut',
             }}
@@ -633,15 +650,17 @@ export default function JarvisOrb({
               height: '30%',
               background: `radial-gradient(circle, ${colorTheme.plasma3} 0%, ${colorTheme.plasma3}cc 35%, transparent 70%)`,
               mixBlendMode: 'screen',
-              opacity: 0.92,
+              opacity: 0.95,
             }}
             animate={{
-              x: [-6, 10, -10, 8, -6],
-              y: [8, -10, 6, -8, 8],
-              scale: [0.8 + volume * 0.25, 1.25 + volume * 0.2, 0.85 + volume * 0.25, 1.15 + volume * 0.2, 0.8 + volume * 0.25],
+              x: isThinking ? [-15, 18, -18, 15, -15] : [-6, 10, -10, 8, -6],
+              y: isThinking ? [18, -20, 16, -18, 18] : [8, -10, 6, -8, 8],
+              scale: isThinking
+                ? [0.65, 1.45, 0.7, 1.38, 0.65]
+                : [0.8 + volume * 0.25, 1.25 + volume * 0.2, 0.85 + volume * 0.25, 1.15 + volume * 0.2, 0.8 + volume * 0.25],
             }}
             transition={{
-              duration: 4.5 / plasmaDriftMul,
+              duration: isThinking ? 0.8 : 4.5 / plasmaDriftMul,
               repeat: Infinity,
               ease: 'easeInOut',
             }}
