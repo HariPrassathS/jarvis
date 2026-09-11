@@ -185,6 +185,11 @@ export default function ChatPanel({
             {/* Drawer Header Tabs */}
             <div className="flex items-center justify-between px-3 sm:px-5 py-2 border-b border-[#4DE8E8]/20 bg-[#4DE8E8]/5">
               <div className="flex items-center gap-1.5 sm:gap-2">
+                <img
+                  src="/jarvis-friday-logo.png"
+                  alt="JARVIS & FRIDAY Emblem"
+                  className="w-5 h-5 rounded-full object-cover border border-white/30 mr-0.5 flex-shrink-0 shadow-[0_0_8px_rgba(77,232,232,0.3)]"
+                />
                 <button
                   type="button"
                   onClick={() => setDrawerTab('transcript')}
@@ -293,19 +298,17 @@ export default function ChatPanel({
                       >
                         {msg.role !== 'user' && (
                           <div
-                            className={`flex-shrink-0 w-6 h-6 rounded-md flex items-center justify-center border ${
+                            className={`flex-shrink-0 w-6 h-6 rounded-full overflow-hidden flex items-center justify-center border ${
                               isFriday
-                                ? 'bg-amber-400/15 border-amber-400/40 shadow-[0_0_8px_rgba(251,191,36,0.2)]'
-                                : 'bg-[#4DE8E8]/15 border-[#4DE8E8]/40'
+                                ? 'border-amber-400/50 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                                : 'border-[#4DE8E8]/50 shadow-[0_0_8px_rgba(77,232,232,0.3)]'
                             }`}
                           >
-                            <span
-                              className={`text-[10px] font-mono font-bold ${
-                                isFriday ? 'text-amber-300' : 'text-[#4DE8E8]'
-                              }`}
-                            >
-                              {isFriday ? 'F' : 'J'}
-                            </span>
+                            <img
+                              src="/jarvis-friday-logo.png"
+                              alt="AI Avatar"
+                              className="w-full h-full object-cover"
+                            />
                           </div>
                         )}
 

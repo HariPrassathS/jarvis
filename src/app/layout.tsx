@@ -37,6 +37,19 @@ export const metadata: Metadata = {
   description:
     'Your personal AI assistant — voice-enabled, built by Stark Industries, with an authentic JARVIS-inspired HUD interface.',
   keywords: ['AI', 'assistant', 'JARVIS', 'FRIDAY', 'voice', 'Stark Industries'],
+  icons: {
+    icon: [
+      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/jarvis-friday-logo.png', sizes: '512x512', type: 'image/png' },
+    ],
+    shortcut: '/jarvis-friday-logo.png',
+    apple: '/apple-touch-icon.png',
+  },
+  openGraph: {
+    title: 'J.A.R.V.I.S — Personal AI Assistant',
+    description: 'Autonomous voice-enabled intelligence assistant featuring JARVIS and FRIDAY personas.',
+    images: [{ url: '/jarvis-friday-logo.png', width: 836, height: 836, alt: 'JARVIS & FRIDAY Logo' }],
+  },
 };
 
 export default function RootLayout({

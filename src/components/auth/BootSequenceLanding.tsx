@@ -90,6 +90,27 @@ export default function BootSequenceLanding() {
       {/* ── Boot Content Container ── */}
       <div className="relative z-10 flex flex-col items-center w-full max-w-lg" style={{ marginTop: '-2vh' }}>
 
+        {/* ═══ Top Header Badge Lockup (Fades in during Phase 2) ═══ */}
+        <div
+          className="mb-1 sm:mb-2 flex items-center gap-2.5 px-3 py-1 rounded-full border border-[#4DE8E8]/20 bg-black/60 backdrop-blur-md shadow-[0_0_15px_rgba(77,232,232,0.1)] transition-all duration-700 ease-out"
+          style={{
+            opacity: phaseIndex >= 2 ? 1 : 0,
+            transform: phaseIndex >= 2 ? 'translateY(0)' : 'translateY(-12px)',
+          }}
+        >
+          <div className="relative group cursor-default flex-shrink-0">
+            <div className="absolute -inset-0.5 rounded-full bg-gradient-to-r from-[#4DE8E8]/50 to-[#FB7185]/50 blur-[4px] opacity-70 group-hover:opacity-100 transition-opacity duration-300" />
+            <img
+              src="/jarvis-friday-logo.png"
+              alt="J.A.R.V.I.S & F.R.I.D.A.Y Logo"
+              className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-white/30 shadow-[0_0_10px_rgba(0,0,0,0.9)] transition-transform duration-300 group-hover:scale-105"
+            />
+          </div>
+          <span className="text-[8.5px] sm:text-[9.5px] font-mono tracking-[0.22em] text-[#4DE8E8]/80 uppercase font-semibold">
+            STARK INDUSTRIES // AI CORE v1.0
+          </span>
+        </div>
+
         {/* ═══ PHASE 1: Seed Point of Light (250ms - 650ms) ═══ */}
         <div
           className="absolute rounded-full pointer-events-none transition-all duration-500 ease-out"

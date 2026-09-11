@@ -111,12 +111,27 @@ export default function IntelligenceSelection({
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
-          className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-[#4DE8E8]/30 bg-black/70 backdrop-blur-md mb-1 shadow-[0_0_15px_rgba(77,232,232,0.15)]"
+          className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full border border-[#4DE8E8]/30 bg-black/70 backdrop-blur-md mb-2 shadow-[0_0_15px_rgba(77,232,232,0.15)]"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-[#4DE8E8] animate-ping" />
           <span className="text-[8.5px] sm:text-[9.5px] font-mono tracking-[0.22em] text-[#4DE8E8] uppercase font-semibold">
             STARK INDUSTRIES // OPERATOR: {displayOperator} · LEVEL {clearanceLevel}{clearanceLevel === 9 ? ' · DIRECT ACCESS' : clearanceLevel === 5 ? ' · TACTICAL' : ' · STANDARD'}
           </span>
+        </motion.div>
+
+        {/* Circular Metallic Logo Badge Centerpiece */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.45, type: 'spring', stiffness: 260, damping: 22 }}
+          className="relative mb-2.5 group cursor-default"
+        >
+          <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-[#00FFFF]/50 via-white/25 to-[#FB7185]/50 blur-md opacity-70 group-hover:opacity-100 transition-opacity duration-300" />
+          <img
+            src="/jarvis-friday-logo.png"
+            alt="J.A.R.V.I.S & F.R.I.D.A.Y Logo"
+            className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border border-white/30 shadow-[0_0_30px_rgba(0,0,0,0.95)] transition-transform duration-300 group-hover:scale-105"
+          />
         </motion.div>
 
         {/* HARI PRASSATH PRESENTS — Impressive Holographic Supertitle */}

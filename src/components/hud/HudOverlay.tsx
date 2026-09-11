@@ -46,9 +46,23 @@ export default function HudOverlay({
         className="relative w-full flex items-center justify-between gap-2"
       >
         {/* Top-Left: Viewfinder Corner Mark & Authenticated Operator & Clearance Badge */}
-        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+          {/* Circular Metallic Logo Badge */}
+          <div className="relative flex-shrink-0 group cursor-default">
+            <div
+              className={`absolute -inset-0.5 rounded-full blur-[4px] transition-all duration-300 opacity-60 group-hover:opacity-100 ${
+                isFriday ? 'bg-amber-400/50' : 'bg-[#4DE8E8]/50'
+              }`}
+            />
+            <img
+              src="/jarvis-friday-logo.png"
+              alt="J.A.R.V.I.S & F.R.I.D.A.Y Logo"
+              className="relative w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-white/25 shadow-[0_0_12px_rgba(0,0,0,0.85)] transition-transform duration-300 group-hover:scale-105"
+            />
+          </div>
+
           <svg
-            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300 flex-shrink-0 ${
+            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors duration-300 flex-shrink-0 hidden sm:block ${
               isFriday ? 'text-amber-400/50' : 'text-[#4DE8E8]/40'
             }`}
             viewBox="0 0 16 16"
