@@ -1,8 +1,3 @@
-// ──────────────────────────────────────────────
-// LLM Router — Multi-Provider Resilient Fallback Chain & Circuit Breaker
-// Priority: Gemini (Fastest & Reliable) → Groq → OpenRouter
-// ──────────────────────────────────────────────
-
 import { callGemini } from './providers/gemini';
 import { streamGemini } from './providers/gemini';
 import { callGroq } from './providers/groq';
@@ -11,18 +6,21 @@ import { callOpenRouter } from './providers/openrouter';
 import { streamOpenRouter } from './providers/openrouter';
 import { callCloudflare } from './providers/cloudflare';
 import { quotaTracker } from '@/lib/quota/tracker';
-import type { ChatMessage, LLMResponse, LLMProvider, ToolDefinition, StreamChunk, StreamingProviderFn } from '@/types';
+import type { ChatMessage, LLMResponse, LLMProvider, ToolDefinition, StreamChunk, StreamingProviderFn, RequestTaskType } from '@/types';
 
-interface RouterOptions {
+export interface RouterOptions {
   messages: ChatMessage[];
   tools?: ToolDefinition[];
   preferredProvider?: LLMProvider;
   timeoutMs?: number;
+  taskType?: RequestTaskType;
+  isDocumentSummary?: boolean;
 }
 
 type ProviderFn = (
   messages: ChatMessage[],
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  taskType?: RequestTaskType
 ) => Promise<LLMResponse>;
 
 interface ProviderEntry {
@@ -32,7 +30,7 @@ interface ProviderEntry {
 
 interface StreamingProviderEntry {
   name: LLMProvider;
-  stream: StreamingProviderFn;
+  stream: (messages: ChatMessage[], tools?: ToolDefinition[], taskType?: RequestTaskType) => AsyncGenerator<StreamChunk, void, unknown>;
   /** Fallback blocking call for providers that don't support streaming (e.g. Cloudflare) */
   blockingCall?: ProviderFn;
 }
@@ -48,7 +46,7 @@ const STREAMING_PROVIDERS: StreamingProviderEntry[] = [
   { name: 'groq', stream: streamGroq },
   { name: 'gemini', stream: streamGemini },
   { name: 'openrouter', stream: streamOpenRouter },
-  { name: 'cloudflare', stream: undefined as unknown as StreamingProviderFn, blockingCall: callCloudflare },
+  { name: 'cloudflare', stream: undefined as unknown as any, blockingCall: callCloudflare },
 ];
 
 const DEFAULT_TIMEOUT = 15000; // 15 seconds per provider
@@ -65,6 +63,36 @@ const circuitState: Record<
   openrouter: { consecutiveFailures: 0, openUntil: 0 },
   cloudflare: { consecutiveFailures: 0, openUntil: 0 },
 };
+
+/**
+ * Lightweight instant request classifier (zero-latency in-memory)
+ */
+export function classifyTaskType(
+  messages: ChatMessage[],
+  options?: { isDocumentSummary?: boolean; taskType?: RequestTaskType }
+): RequestTaskType {
+  if (options?.taskType) return options.taskType;
+
+  // 1. Explicit: image attachments present -> vision
+  const hasImage = messages.some(
+    (m) => m.attachments && m.attachments.some((a) => a.type === 'image' && a.dataUrl)
+  );
+  if (hasImage) return 'vision';
+
+  // 2. Explicit: document attachments or explicit summarization flag / long doc text -> deep_summary
+  const hasDocument = messages.some(
+    (m) => m.attachments && m.attachments.some((a) => a.type === 'document' || (a.extractedText && a.extractedText.length > 500))
+  );
+  if (options?.isDocumentSummary || hasDocument) return 'deep_summary';
+
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg && typeof lastMsg.content === 'string' && lastMsg.content.length > 3000) {
+    return 'deep_summary';
+  }
+
+  // 3. Default -> quick_chat
+  return 'quick_chat';
+}
 
 export function getCircuitBreakerStatus(): Record<LLMProvider, { status: 'CLOSED' | 'OPEN'; failures: number }> {
   const now = Date.now();
@@ -92,10 +120,11 @@ async function callWithTimeout(
   fn: ProviderFn,
   messages: ChatMessage[],
   tools: ToolDefinition[] | undefined,
+  taskType: RequestTaskType,
   timeoutMs: number
 ): Promise<LLMResponse> {
   return Promise.race([
-    fn(messages, tools),
+    fn(messages, tools, taskType),
     new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(`Provider timeout after ${timeoutMs}ms`)), timeoutMs)
     ),
@@ -107,21 +136,19 @@ async function callWithTimeout(
  */
 export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
   const { messages, tools, preferredProvider, timeoutMs = DEFAULT_TIMEOUT } = options;
-
-  const hasImageAttachment = messages.some(
-    (m) => m.attachments && m.attachments.some((a) => a.type === 'image')
-  );
+  const taskType = classifyTaskType(messages, options);
 
   let orderedProviders = [...PROVIDERS];
 
-  if (hasImageAttachment) {
-    // Image understanding strictly requires Gemini (multimodal vision support)
-    orderedProviders = orderedProviders.filter((p) => p.name === 'gemini');
-    if (orderedProviders.length === 0) {
-      orderedProviders = [{ name: 'gemini', call: callGemini }];
+  if (taskType === 'vision') {
+    // Vision supported by Groq (meta-llama/llama-4-scout, qwen3.8-27b) and Gemini (gemini-2.5-flash)
+    orderedProviders = orderedProviders.filter((p) => p.name === 'groq' || p.name === 'gemini');
+    if (preferredProvider === 'gemini') {
+      orderedProviders.sort((a, b) => (a.name === 'gemini' ? -1 : 1));
+    } else {
+      orderedProviders.sort((a, b) => (a.name === 'groq' ? -1 : 1));
     }
   } else {
-    // Proactively reorder providers based on 24h quota usage (<80% healthy first, >80% deprioritized last)
     try {
       orderedProviders = await quotaTracker.prioritizeProviders(orderedProviders, preferredProvider);
     } catch (err) {
@@ -135,7 +162,6 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
   for (const provider of orderedProviders) {
     const state = circuitState[provider.name];
 
-    // Check if circuit breaker is open
     if (state.openUntil > now) {
       console.warn(
         `[LLM Router] Skipping ${provider.name} — Circuit Breaker is OPEN (cool-off remaining: ${Math.round(
@@ -149,7 +175,6 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
       continue;
     }
 
-    // Check if provider has 100% exhausted its daily budget
     try {
       const qStatus = await quotaTracker.getStatus(provider.name);
       if (qStatus.isExhausted) {
@@ -160,22 +185,17 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
         });
         continue;
       }
-    } catch {
-      // Continue if quota check fails
-    }
+    } catch {}
 
     try {
       const startTime = Date.now();
-      console.log(`[LLM Router] Calling provider: ${provider.name}${hasImageAttachment ? ' (Vision Mode)' : ''}`);
+      console.log(`[LLM Router] Calling provider: ${provider.name} [Task: ${taskType}]`);
 
-      const response = await callWithTimeout(provider.call, messages, tools, timeoutMs);
+      const response = await callWithTimeout(provider.call, messages, tools, taskType, timeoutMs);
       const latencyMs = Date.now() - startTime;
 
-      // Reset circuit breaker on success
       state.consecutiveFailures = 0;
       state.openUntil = 0;
-
-      // Record quota usage asynchronously
       quotaTracker.recordRequest(provider.name);
 
       console.log(`[LLM Router] Success with provider: ${provider.name} in ${latencyMs}ms`);
@@ -196,11 +216,11 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
     }
   }
 
-  // Graceful in-character fallback for vision requests when Gemini is saturated
-  if (hasImageAttachment) {
+  // Graceful in-character fallback for vision requests when all vision providers fail
+  if (taskType === 'vision') {
     return {
-      content: "Visual perception sensors (Gemini Vision Core) are temporarily offline or capacity saturated, sir. I was unable to process the visual telemetry from your uploaded image. Please retry in a few moments.",
-      provider_used: 'gemini',
+      content: "Visual telemetry processing encountered temporary interference across satellite links, sir. All core diagnostics remain nominal. Please try resending the visual feed.",
+      provider_used: 'groq',
     };
   }
 
@@ -210,13 +230,12 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
     circuitState.groq.openUntil = 0;
     circuitState.groq.consecutiveFailures = 0;
     try {
-      return await callWithTimeout(callGroq, messages, tools, timeoutMs);
+      return await callWithTimeout(callGroq, messages, tools, taskType, timeoutMs);
     } catch (err) {
       errors.push({ provider: 'groq-failsafe', error: String(err) });
     }
   }
 
-  // All providers failed
   throw new Error(
     `All LLM providers failed in fallback chain:\n${errors
       .map((e) => `  [${e.provider}] ${e.error}`)
@@ -226,23 +245,21 @@ export async function routeChat(options: RouterOptions): Promise<LLMResponse> {
 
 /**
  * Stream a chat request through the provider chain with circuit breaker fallback.
- * Yields StreamChunk tokens progressively. Falls back to blocking for Cloudflare.
+ * Yields StreamChunk tokens progressively.
  */
 export async function* routeChatStream(options: RouterOptions): AsyncGenerator<StreamChunk, void, unknown> {
   const { messages, tools, preferredProvider } = options;
+  const taskType = classifyTaskType(messages, options);
 
-  const hasImageAttachment = messages.some(
-    (m) => m.attachments && m.attachments.some((a) => a.type === 'image')
-  );
-
-  // Build ordered streaming provider list using same quota-aware prioritization
   let orderedProviders = [...STREAMING_PROVIDERS];
 
-  if (hasImageAttachment) {
-    // Image understanding strictly requires Gemini (multimodal vision support)
-    orderedProviders = orderedProviders.filter((p) => p.name === 'gemini');
-    if (orderedProviders.length === 0) {
-      orderedProviders = [{ name: 'gemini', stream: streamGemini }];
+  if (taskType === 'vision') {
+    // Vision supported by Groq (meta-llama/llama-4-scout, qwen3.8-27b) and Gemini (gemini-2.5-flash)
+    orderedProviders = orderedProviders.filter((p) => p.name === 'groq' || p.name === 'gemini');
+    if (preferredProvider === 'gemini') {
+      orderedProviders.sort((a, b) => (a.name === 'gemini' ? -1 : 1));
+    } else {
+      orderedProviders.sort((a, b) => (a.name === 'groq' ? -1 : 1));
     }
   } else {
     try {
@@ -266,11 +283,8 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
   for (const provider of orderedProviders) {
     const state = circuitState[provider.name];
 
-    // Check if circuit breaker is open
     if (state.openUntil > now) {
-      console.warn(
-        `[LLM Router Stream] Skipping ${provider.name} — Circuit Breaker OPEN`
-      );
+      console.warn(`[LLM Router Stream] Skipping ${provider.name} — Circuit Breaker OPEN`);
       errors.push({
         provider: provider.name,
         error: `Circuit breaker OPEN`,
@@ -278,7 +292,6 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
       continue;
     }
 
-    // Check if provider has exhausted its daily budget
     try {
       const qStatus = await quotaTracker.getStatus(provider.name);
       if (qStatus.isExhausted) {
@@ -289,17 +302,15 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
         });
         continue;
       }
-    } catch {
-      // Continue if quota check fails
-    }
+    } catch {}
 
     try {
       const startTime = Date.now();
-      console.log(`[LLM Router Stream] Starting stream with provider: ${provider.name}${hasImageAttachment ? ' (Vision Mode)' : ''}`);
+      console.log(`[LLM Router Stream] Starting stream with provider: ${provider.name} [Task: ${taskType}]`);
 
       // Cloudflare doesn't support streaming — use blocking fallback and emit as single chunk
       if (provider.name === 'cloudflare' && provider.blockingCall) {
-        const response = await provider.blockingCall(messages, tools);
+        const response = await provider.blockingCall(messages, tools, taskType);
         state.consecutiveFailures = 0;
         state.openUntil = 0;
         quotaTracker.recordRequest(provider.name);
@@ -314,13 +325,13 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
         return;
       }
 
-      // Stream from the provider
       let emittedAny = false;
-      for await (const chunk of provider.stream(messages, tools)) {
+      const streamGenerator = provider.stream(messages, tools, taskType);
+
+      for await (const chunk of streamGenerator) {
         emittedAny = true;
         yield chunk;
 
-        // If provider signaled done or tool_calls, we're finished
         if (chunk.done || chunk.tool_calls) {
           const latencyMs = Date.now() - startTime;
           state.consecutiveFailures = 0;
@@ -331,7 +342,6 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
         }
       }
 
-      // Stream ended naturally without a done/tool_call signal
       if (emittedAny) {
         const latencyMs = Date.now() - startTime;
         state.consecutiveFailures = 0;
@@ -350,25 +360,22 @@ export async function* routeChatStream(options: RouterOptions): AsyncGenerator<S
       state.consecutiveFailures++;
       if (state.consecutiveFailures >= CIRCUIT_BREAKER_FAIL_THRESHOLD) {
         state.openUntil = Date.now() + CIRCUIT_BREAKER_RESET_MS;
-        console.error(
-          `[LLM Router Stream] ⚡ Circuit Breaker TRIPPED for ${provider.name}`
-        );
+        console.error(`[LLM Router Stream] ⚡ Circuit Breaker TRIPPED for ${provider.name}`);
       }
 
       errors.push({ provider: provider.name, error: errorMsg });
     }
   }
 
-  // Graceful in-character fallback for vision stream when Gemini is saturated
-  if (hasImageAttachment) {
+  // Graceful in-character fallback for vision stream
+  if (taskType === 'vision') {
     yield {
-      token: "Visual perception sensors (Gemini Vision Core) are temporarily offline or capacity saturated, sir. I was unable to process the visual telemetry from your uploaded image. Please retry in a few moments.",
+      token: "Visual telemetry processing encountered temporary interference across satellite links, sir. All core diagnostics remain nominal. Please try resending the visual feed.",
     };
-    yield { done: true, provider_used: 'gemini' };
+    yield { done: true, provider_used: 'groq' };
     return;
   }
 
-  // All streaming providers failed — yield error
   yield {
     error: `All LLM providers failed in streaming chain: ${errors.map((e) => `[${e.provider}] ${e.error}`).join('; ')}`,
     done: true,

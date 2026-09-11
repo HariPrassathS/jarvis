@@ -11,6 +11,9 @@ export type LLMProvider = 'groq' | 'gemini' | 'openrouter' | 'cloudflare';
 /** Dual voice persona: JARVIS (male butler) or FRIDAY (female tactical) */
 export type VoicePersona = 'jarvis' | 'friday';
 
+/** Task-based router request classification */
+export type RequestTaskType = 'quick_chat' | 'vision' | 'deep_summary' | 'stt';
+
 /** Chat message roles */
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 

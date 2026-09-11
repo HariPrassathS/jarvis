@@ -536,6 +536,16 @@ export default function Home() {
   ]);
 
 
+  // Determine if currently analyzing visual telemetry
+  const isAnalyzingVision =
+    isLoading &&
+    messages.some(
+      (m, idx) =>
+        idx >= messages.length - 2 &&
+        m.role === 'user' &&
+        m.attachments?.some((a) => a.type === 'image')
+    );
+
   // Determine JARVIS state dynamically without effect loops (with priority to receiving during file upload/drag)
   const jarvisState: JarvisState = isOrbReceiving
     ? 'receiving'
@@ -895,6 +905,7 @@ export default function Home() {
               persona={persona}
               hideLabel={!isHudActive}
               isMicKilled={isMicKilled}
+              customStateLabel={isAnalyzingVision ? 'ANALYZING VISUAL INPUT...' : undefined}
             />
           </motion.div>
 

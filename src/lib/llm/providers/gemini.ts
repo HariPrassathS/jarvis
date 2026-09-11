@@ -126,7 +126,7 @@ function buildGeminiUserParts(message: ChatMessage): Array<Record<string, unknow
 // Verified Models: gemini-2.0-flash, gemini-1.5-flash, gemini-1.5-pro
 // ──────────────────────────────────────────────
 
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.6-flash'];
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-3.6-flash'];
 
 export async function callGemini(
   messages: ChatMessage[],

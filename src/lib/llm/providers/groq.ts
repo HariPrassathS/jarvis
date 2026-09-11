@@ -4,7 +4,7 @@
 // ──────────────────────────────────────────────
 
 import Groq from 'groq-sdk';
-import type { ChatMessage, LLMResponse, ToolDefinition, StreamChunk } from '@/types';
+import type { ChatMessage, LLMResponse, ToolDefinition, StreamChunk, RequestTaskType } from '@/types';
 import type {
   ChatCompletionCreateParamsNonStreaming,
   ChatCompletionCreateParamsStreaming,
@@ -14,6 +14,27 @@ import type {
   ChatCompletionSystemMessageParam,
   ChatCompletionAssistantMessageParam,
 } from 'groq-sdk/resources/chat/completions';
+
+export const TASK_MODELS: Record<RequestTaskType, string[]> = {
+  vision: [
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'qwen/qwen3.8-27b',
+  ],
+  quick_chat: [
+    'qwen/qwen3.8-27b',
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-120b',
+    'groq/compound',
+  ],
+  deep_summary: [
+    'openai/gpt-oss-120b',
+    'qwen/qwen3.8-27b',
+  ],
+  stt: [
+    'whisper-large-v3-turbo',
+    'whisper-large-v3',
+  ],
+};
 
 function toGroqMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
   return messages.map((m): ChatCompletionMessageParam => {
@@ -50,6 +71,43 @@ function toGroqMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
         content: m.content,
       } satisfies ChatCompletionSystemMessageParam;
     }
+
+    // User message: construct multimodal image_url / text blocks if attachments are present
+    if (m.attachments && m.attachments.length > 0) {
+      const contentParts: Array<
+        | { type: 'text'; text: string }
+        | { type: 'image_url'; image_url: { url: string } }
+      > = [];
+
+      for (const att of m.attachments) {
+        if (att.type === 'image' && att.dataUrl) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url: att.dataUrl },
+          });
+        } else if (att.type === 'document' && att.extractedText) {
+          const docHeader = `[DOCUMENT ATTACHMENT: "${att.name}" (${att.pageCount ? att.pageCount + ' pages, ' : ''}${Math.round(att.size / 1024)}KB)]`;
+          contentParts.push({
+            type: 'text',
+            text: `${docHeader}\n${att.extractedText}\n--- END DOCUMENT ---`,
+          });
+        }
+      }
+
+      let textContent = m.content || '';
+      if (!textContent && contentParts.length > 0) {
+        textContent = "Please examine this visual/document telemetry and report your analysis, sir.";
+      }
+      if (textContent) {
+        contentParts.push({ type: 'text', text: textContent });
+      }
+
+      return {
+        role: 'user',
+        content: contentParts as any,
+      } satisfies ChatCompletionUserMessageParam;
+    }
+
     return {
       role: 'user',
       content: m.content,
@@ -81,7 +139,6 @@ function getNextHealthyClient(): { client: Groq; key: string } {
   }
 
   const now = Date.now();
-  // Try up to keys.length times to find a key not in cooldown
   for (let i = 0; i < keys.length; i++) {
     const idx = (currentKeyIndex + i) % keys.length;
     const candidateKey = keys[idx];
@@ -98,7 +155,6 @@ function getNextHealthyClient(): { client: Groq; key: string } {
     }
   }
 
-  // If all keys are in cooldown, pick the one expiring earliest
   currentKeyIndex = (currentKeyIndex + 1) % keys.length;
   const fallbackKey = keys[0];
   let client = clientCache.get(fallbackKey);
@@ -109,23 +165,18 @@ function getNextHealthyClient(): { client: Groq; key: string } {
   return { client, key: fallbackKey };
 }
 
-const GROQ_MODELS = [
-  'qwen/qwen3.8-27b',
-  'openai/gpt-oss-120b',
-  'openai/gpt-oss-20b',
-  'groq/compound',
-];
-
 export async function callGroq(
   messages: ChatMessage[],
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  taskType: RequestTaskType = 'quick_chat'
 ): Promise<LLMResponse> {
   const groqMessages = toGroqMessages(messages);
   const { client, key } = getNextHealthyClient();
+  const candidateModels = TASK_MODELS[taskType] || TASK_MODELS.quick_chat;
 
   let lastErr: any;
 
-  for (const model of GROQ_MODELS) {
+  for (const model of candidateModels) {
     const params: ChatCompletionCreateParamsNonStreaming = {
       model,
       messages: groqMessages,
@@ -140,7 +191,7 @@ export async function callGroq(
     }
 
     try {
-      const completion = await client.chat.completions.create(params, { timeout: 5000 });
+      const completion = await client.chat.completions.create(params, { timeout: 6000 });
       const choice = completion.choices[0];
 
       return {
@@ -168,14 +219,13 @@ export async function callGroq(
         err?.message?.includes('model') ||
         err?.message?.includes('quota');
       if (isRateLimitOrNotFound) {
-        console.warn(`[Groq Provider] Model ${model} failed (${err?.message}). Trying fallback model in mesh...`);
+        console.warn(`[Groq Provider] Model ${model} failed (${err?.message}). Trying fallback model for task ${taskType}...`);
         continue;
       }
       throw err;
     }
   }
 
-  // If all candidate models in Groq failed with rate limit, cool down key for 30s
   if (
     lastErr?.status === 429 ||
     lastErr?.message?.includes('429') ||
@@ -193,14 +243,16 @@ export async function callGroq(
  */
 export async function* streamGroq(
   messages: ChatMessage[],
-  tools?: ToolDefinition[]
+  tools?: ToolDefinition[],
+  taskType: RequestTaskType = 'quick_chat'
 ): AsyncGenerator<StreamChunk, void, unknown> {
   const groqMessages = toGroqMessages(messages);
   const { client, key } = getNextHealthyClient();
+  const candidateModels = TASK_MODELS[taskType] || TASK_MODELS.quick_chat;
 
   let lastErr: any;
 
-  for (const model of GROQ_MODELS) {
+  for (const model of candidateModels) {
     const params: ChatCompletionCreateParamsStreaming = {
       model,
       messages: groqMessages,
@@ -215,9 +267,8 @@ export async function* streamGroq(
     }
 
     try {
-      const stream = await client.chat.completions.create(params, { timeout: 5000 });
+      const stream = await client.chat.completions.create(params, { timeout: 6000 });
 
-      // Accumulate tool calls across chunks (they arrive in parts)
       const toolCallAccumulator: Record<number, { id: string; name: string; arguments: string }> = {};
       let hasToolCalls = false;
 
@@ -225,7 +276,6 @@ export async function* streamGroq(
         const delta = chunk.choices?.[0]?.delta;
         if (!delta) continue;
 
-        // Handle tool call deltas
         if (delta.tool_calls) {
           hasToolCalls = true;
           for (const tc of delta.tool_calls) {
@@ -247,13 +297,11 @@ export async function* streamGroq(
           continue;
         }
 
-        // Handle text content deltas
         if (delta.content) {
           yield { token: delta.content };
         }
       }
 
-      // If tool calls were accumulated, yield them
       if (hasToolCalls) {
         const toolCalls = Object.values(toolCallAccumulator).map((tc) => ({
           id: tc.id,
@@ -282,14 +330,13 @@ export async function* streamGroq(
         err?.message?.includes('model') ||
         err?.message?.includes('quota');
       if (isRateLimitOrNotFound) {
-        console.warn(`[Groq Stream] Model ${model} failed (${err?.message}). Trying fallback model...`);
+        console.warn(`[Groq Stream] Model ${model} failed (${err?.message}). Trying fallback model for task ${taskType}...`);
         continue;
       }
       throw err;
     }
   }
 
-  // All models rate-limited — cool down key
   if (
     lastErr?.status === 429 ||
     lastErr?.message?.includes('429') ||

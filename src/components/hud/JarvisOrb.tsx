@@ -31,6 +31,7 @@ interface JarvisOrbProps {
   persona?: VoicePersona;
   size?: 'sm' | 'md' | 'lg';
   isMicKilled?: boolean;
+  customStateLabel?: string;
 }
 
 export default function JarvisOrb({
@@ -40,6 +41,7 @@ export default function JarvisOrb({
   persona = 'jarvis',
   size = 'md',
   isMicKilled = false,
+  customStateLabel,
 }: JarvisOrbProps) {
   const [isMobile, setIsMobile] = useState(false);
 
@@ -275,8 +277,9 @@ export default function JarvisOrb({
   const voiceScale = 1 + (state === 'listening' || state === 'speaking' || state === 'receiving' ? volume * 0.14 : 0);
 
   const stateLabel =
-    state === 'receiving'
-      ? 'RECEIVING STREAM...'
+    customStateLabel ||
+    (state === 'receiving'
+      ? 'RECEIVING VISUAL TELEMETRY...'
       : state === 'listening'
       ? 'LISTENING...'
       : state === 'thinking'
@@ -285,7 +288,7 @@ export default function JarvisOrb({
       ? 'SPEAKING...'
       : isMicKilled
       ? 'MIC DISABLED'
-      : 'IDLE';
+      : 'IDLE');
 
   // ── Arc Equalizer geometry ──
   // 16 bars spanning the lower 110 degrees (35deg to 145deg)

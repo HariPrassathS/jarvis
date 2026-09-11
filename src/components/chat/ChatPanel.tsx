@@ -40,7 +40,9 @@ export default function ChatPanel({
   const [input, setInput] = useState('');
   const [localAttachments, setLocalAttachments] = useState<ChatAttachment[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; name: string; size: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isFriday = persona === 'friday';
 
@@ -208,20 +210,25 @@ export default function ChatPanel({
                                 return (
                                   <div
                                     key={att.id}
-                                    className="rounded-lg overflow-hidden border border-[#4DE8E8]/35 bg-black/70 p-1.5 shadow-[0_0_15px_rgba(0,255,255,0.08)]"
+                                    onClick={() => setSelectedImage({ url: att.dataUrl!, name: att.name, size: att.size })}
+                                    className="group/img relative rounded-lg overflow-hidden border border-[#4DE8E8]/35 bg-black/70 p-1.5 shadow-[0_0_15px_rgba(0,255,255,0.08)] cursor-pointer hover:border-[#4DE8E8] transition-all"
+                                    title="Click to expand visual telemetry"
                                   >
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img
                                       src={att.dataUrl}
                                       alt={att.name}
-                                      className="max-h-52 sm:max-h-64 w-auto max-w-full rounded object-contain mx-auto block"
+                                      className="max-h-52 sm:max-h-64 w-auto max-w-full rounded object-contain mx-auto block group-hover/img:scale-[1.01] transition-transform duration-200"
                                     />
-                                    <div className="flex items-center justify-between px-2 py-1 bg-black/60 backdrop-blur-md text-[9px] font-mono text-[#4DE8E8]/80 mt-1.5 rounded">
+                                    <div className="flex items-center justify-between px-2 py-1 bg-black/70 backdrop-blur-md text-[9px] font-mono text-[#4DE8E8]/90 mt-1.5 rounded">
                                       <span className="truncate max-w-[200px] flex items-center gap-1">
                                         <span>📷</span>
                                         <span>{att.name}</span>
                                       </span>
-                                      <span>{Math.round(att.size / 1024)} KB</span>
+                                      <span className="flex items-center gap-1.5">
+                                        <span>{Math.round(att.size / 1024)} KB</span>
+                                        <span className="text-[10px] text-[#4DE8E8] group-hover/img:text-white">⤢</span>
+                                      </span>
                                     </div>
                                   </div>
                                 );
@@ -272,7 +279,7 @@ export default function ChatPanel({
                 })
               )}
 
-              {/* Thinking loader — only show when loading and NOT yet streaming */}
+              {/* Thinking loader — detects vision analysis vs general telemetry */}
               {isLoading && !isStreaming && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -282,7 +289,11 @@ export default function ChatPanel({
                   <div className="w-4 h-4 rounded bg-[#4DE8E8]/20 border border-[#4DE8E8]/40 flex items-center justify-center">
                     <span className="text-[9px] text-[#4DE8E8] animate-spin">⟳</span>
                   </div>
-                  <span className="tracking-wider">SYNTHESIZING TELEMETRY...</span>
+                  <span className="tracking-wider">
+                    {messages[messages.length - 1]?.attachments?.some((a) => a.type === 'image') || allStaged.some((a) => a.type === 'image')
+                      ? 'ANALYZING VISUAL INPUT...'
+                      : 'SYNTHESIZING TELEMETRY...'}
+                  </span>
                 </motion.div>
               )}
 
@@ -356,13 +367,21 @@ export default function ChatPanel({
                      px-1.5 sm:px-2 py-1 sm:py-1.5 focus-within:border-[#4DE8E8]/85 focus-within:shadow-[0_0_32px_rgba(77,232,232,0.28)]
                      transition-all duration-300 min-h-[46px]"
         >
-          {/* Hidden File Input */}
+          {/* Hidden File Inputs */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileInputChange}
             multiple
             accept="image/*,.pdf,.txt,.md,.json,.csv,.ts,.tsx,.js,.jsx,.py,.html,.css"
+            className="hidden"
+          />
+          <input
+            type="file"
+            ref={imageInputRef}
+            onChange={handleFileInputChange}
+            multiple
+            accept="image/png,image/jpeg,image/jpg,image/webp"
             className="hidden"
           />
 
@@ -393,15 +412,31 @@ export default function ChatPanel({
             </svg>
           </motion.button>
 
-          {/* File Upload Button (Paperclip / Camera HUD Affordance) */}
+          {/* Camera / Vision Image Upload Button */}
+          <motion.button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isLoading || isExtracting}
+            whileTap={{ scale: 0.92 }}
+            title="Upload image for visual analysis (PNG/JPG/WebP)"
+            aria-label="Upload image for vision analysis"
+            className="flex items-center justify-center w-8 h-8 rounded-full text-[#4DE8E8]/80 hover:text-white hover:bg-[#4DE8E8]/20 border border-transparent hover:border-[#4DE8E8]/40 transition-all flex-shrink-0 cursor-pointer ml-1 disabled:opacity-40"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </motion.button>
+
+          {/* Document / File Upload Button (Paperclip) */}
           <motion.button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading || isExtracting}
             whileTap={{ scale: 0.92 }}
-            title="Attach image (vision) or document (PDF/text)"
-            aria-label="Attach file or screenshot"
-            className="flex items-center justify-center w-8 h-8 rounded-full text-[#4DE8E8]/70 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/15 border border-transparent hover:border-[#4DE8E8]/30 transition-all flex-shrink-0 cursor-pointer ml-1 disabled:opacity-40"
+            title="Attach document (PDF/text/code)"
+            aria-label="Attach document"
+            className="flex items-center justify-center w-8 h-8 rounded-full text-[#4DE8E8]/70 hover:text-[#4DE8E8] hover:bg-[#4DE8E8]/15 border border-transparent hover:border-[#4DE8E8]/30 transition-all flex-shrink-0 cursor-pointer disabled:opacity-40"
           >
             {isExtracting ? (
               <span className="w-3.5 h-3.5 border-2 border-[#4DE8E8] border-t-transparent rounded-full animate-spin" />
@@ -424,10 +459,10 @@ export default function ChatPanel({
             onChange={(e) => setInput(e.target.value)}
             placeholder={
               allStaged.length > 0
-                ? 'Add a question about your attachment...'
+                ? 'Add a question about your visual/document telemetry...'
                 : isFriday
-                ? 'Ask or command FRIDAY...'
-                : 'Ask or command JARVIS...'
+                ? 'Ask or command FRIDAY (or drop image)...'
+                : 'Ask or command JARVIS (or drop image)...'
             }
             disabled={isLoading}
             className="flex-1 bg-transparent border-0 px-2 sm:px-3 py-1 text-xs sm:text-sm text-white/90 placeholder-white/30
@@ -456,6 +491,48 @@ export default function ChatPanel({
           </motion.button>
         </form>
       </motion.div>
+
+      {/* ── Multi-Modal Expandable Image Lightbox Modal ── */}
+      <AnimatePresence>
+        {selectedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSelectedImage(null)}
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-4 pointer-events-auto cursor-zoom-out"
+          >
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-w-4xl max-h-[88vh] bg-black/95 border border-[#4DE8E8]/50 rounded-2xl p-3 sm:p-4 shadow-[0_0_50px_rgba(77,232,232,0.25)] flex flex-col items-center cursor-default"
+            >
+              <div className="w-full flex items-center justify-between pb-2.5 mb-2.5 border-b border-[#4DE8E8]/25 text-xs font-mono text-[#4DE8E8]">
+                <span className="flex items-center gap-1.5 truncate max-w-[80%]">
+                  <span>📷</span>
+                  <span className="font-semibold text-white truncate">{selectedImage.name}</span>
+                  <span className="text-[#4DE8E8]/60">({Math.round(selectedImage.size / 1024)} KB)</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedImage(null)}
+                  className="text-[#4DE8E8]/70 hover:text-white transition-colors text-xs px-2.5 py-1 rounded border border-[#4DE8E8]/30 hover:border-[#4DE8E8] cursor-pointer"
+                >
+                  CLOSE [✕]
+                </button>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedImage.url}
+                alt={selectedImage.name}
+                className="max-h-[72vh] w-auto max-w-full rounded-lg object-contain shadow-2xl border border-[#4DE8E8]/20"
+              />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

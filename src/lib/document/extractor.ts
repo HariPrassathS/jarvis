@@ -79,23 +79,38 @@ export async function extractPdfText(file: File): Promise<{ text: string; pageCo
   }
 }
 
+// Maximum allowed image size (10MB)
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const SUPPORTED_IMAGE_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
 /**
  * Main dispatcher: Process any uploaded File into a structured ChatAttachment
  */
 export async function processUploadedFile(file: File): Promise<ChatAttachment> {
   const fileId = `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const fileName = file.name;
-  const mimeType = file.type || 'application/octet-stream';
+  const mimeType = (file.type || '').toLowerCase();
   const size = file.size;
 
-  // 1. Image Files (PNG, JPG, WebP, GIF, etc.)
-  if (mimeType.startsWith('image/')) {
+  // 1. Image Files (PNG, JPG, WebP)
+  if (mimeType.startsWith('image/') || /\.(png|jpe?g|webp)$/i.test(fileName)) {
+    // Check size limit (10MB)
+    if (size > MAX_IMAGE_BYTES) {
+      throw new Error(`Visual telemetry exceeds maximum bandwidth limit of 10MB (${(size / (1024 * 1024)).toFixed(1)}MB), sir. Please crop or compress the image.`);
+    }
+
+    // Check supported format
+    const isSupportedMime = SUPPORTED_IMAGE_MIMES.some(m => mimeType.includes(m.replace('image/', ''))) || /\.(png|jpe?g|webp)$/i.test(fileName);
+    if (!isSupportedMime) {
+      throw new Error(`Visual sensor array only accepts JPG, PNG, and WebP formats, sir.`);
+    }
+
     const dataUrl = await readFileAsDataUrl(file);
     return {
       id: fileId,
       type: 'image',
       name: fileName,
-      mimeType,
+      mimeType: mimeType || 'image/png',
       size,
       dataUrl,
     };
