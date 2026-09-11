@@ -118,52 +118,21 @@ class QuotaTracker {
   }
 
   /**
-   * Get quota status for a specific provider
+   * Get quota status for a specific provider (zero-latency in-memory lookup)
    */
   async getStatus(provider: string): Promise<ProviderStatus> {
     const config = PROVIDER_QUOTAS[provider] || { dailyRequestLimit: 5000, warningThresholdPercent: 80 };
     const local = this.getLocalRecord(provider);
-    const today = this.getTodayUTC();
-
-    // Query Supabase for latest cross-instance count if available
-    let totalRequests = local.requests;
-    let totalTokens = local.tokens;
-    let lastUsed: string | undefined = undefined;
-
-    try {
-      const supabase = createServerSupabaseClient();
-      const { data } = await supabase
-        .from('provider_usage')
-        .select('request_count, token_count, last_used_at')
-        .eq('provider', provider)
-        .eq('date_utc', today)
-        .single();
-
-      if (data) {
-        totalRequests = Math.max(local.requests, data.request_count);
-        totalTokens = Math.max(local.tokens, data.token_count);
-        lastUsed = data.last_used_at;
-        // Sync local
-        local.requests = totalRequests;
-        local.tokens = totalTokens;
-      }
-    } catch {
-      // Use local memory counts
-    }
-
-    const percentUsed = Math.min(100, Math.round((totalRequests / config.dailyRequestLimit) * 100));
-    const isDeprioritized = percentUsed >= config.warningThresholdPercent;
-    const isExhausted = totalRequests >= config.dailyRequestLimit;
+    const percentUsed = Math.min(100, Math.round((local.requests / config.dailyRequestLimit) * 100));
 
     return {
       provider: provider as LLMProvider,
-      requestsToday: totalRequests,
-      tokensToday: totalTokens,
+      requestsToday: local.requests,
+      tokensToday: local.tokens,
       dailyLimit: config.dailyRequestLimit,
       percentUsed,
-      isDeprioritized,
-      isExhausted,
-      lastUsedAt: lastUsed,
+      isDeprioritized: percentUsed >= config.warningThresholdPercent,
+      isExhausted: local.requests >= config.dailyRequestLimit,
     };
   }
 
