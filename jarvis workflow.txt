@@ -517,6 +517,41 @@ SECTION 12: BIOMETRIC HANDSHAKE & SYSTEM BOOT NARRATIVE
    - When enabled, switches spring transforms and heavy rotations to subtle, fast crossfades (200-250ms).
 
 ================================================================================
+SECTION 13: HIGH-FIDELITY BROWSER-NATIVE VOICE ENGINE ARCHITECTURE
+================================================================================
+
+1. CORE ARCHITECTURE & LOCAL EXECUTION:
+   - File: `src/lib/voice/` & `src/hooks/useSpeechSynthesis.ts`
+   - Operates 100% browser-native using standard `window.speechSynthesis` / `SpeechSynthesisUtterance`.
+   - Zero external paid TTS services (no Google Cloud TTS, ElevenLabs, Azure, or Polly) — strictly zero cloud network overhead.
+   - Preserves 100% verbatim AI response text in the UI while applying advanced speech preprocessing exclusively to audio synthesis.
+
+2. PRONUNCIATION NORMALIZATION & DICTIONARY:
+   - Files: `src/lib/voice/pronunciation-normalizer.ts`, `src/lib/voice/pronunciation-dictionary.ts`
+   - Comprehensive technical dictionary of 100+ developer terms (REST API, SQL, JSON, Next.js, PostgreSQL, Supabase, Vercel, Docker, Kubernetes, GraphQL, etc.).
+   - Natural Number & Currency Expansion:
+     * 4-digit Years: `2026` -> "twenty twenty-six", `1999` -> "nineteen ninety-nine"
+     * Currencies: `$25` -> "twenty-five dollars", `₹500` -> "five hundred rupees"
+     * Decimals & Percentages: `3.14` -> "three point one four", `100%` -> "one hundred percent", `72.5%` -> "seventy-two point five percent"
+     * Frequencies & Units: `44.1kHz` -> "forty-four point one kilohertz", `1920x1080` -> "nineteen twenty by ten eighty"
+     * Code Operators: `===` -> "strictly equals", `!==` -> "does not equal", `&&` -> "and"
+     * Creator Name: "Hari Prassath S" -> "Hari Prassath Selvaraj"
+
+3. PROSODY & DYNAMIC RATE/PITCH ENGINE:
+   - File: `src/lib/voice/prosody-engine.ts`
+   - Contextual sentence classification: status reports, warnings/alerts, short acknowledgements ("Understood, sir", "Right away, boss"), questions, enthusiastic outcomes, long explanations.
+   - Dynamic rate, pitch, volume, and inter-sentence pause modulation tuned for JARVIS (measured British butler) and FRIDAY (tactical Irish/warm).
+
+4. SENTENCE SEGMENTATION & STREAMING QUEUE:
+   - File: `src/lib/voice/sentence-segmenter.ts`
+   - Intelligent boundary detection that protects decimals (`3.14`), abbreviations (`e.g.`, `i.e.`, `Dr.`), version strings (`v1.0`), and file extensions (`Node.js`, `.json`) from false splits.
+   - FIFO sequential streaming queue with voice consistency locking and instant cancellation on barge-in.
+
+5. AUTOMATED VERIFICATION SUITE:
+   - File: `scripts/test-voice-engine.mjs`
+   - 30/30 unit tests covering numbers, technical dictionary, creator identity, sentence segmentation, prosody calculation, and voice resolution hierarchy.
+================================================================================
                      END OF WORKFLOW SPECIFICATION
 ================================================================================
+
 
