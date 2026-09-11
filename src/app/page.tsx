@@ -31,6 +31,7 @@ import CommandPalette from '@/components/hud/CommandPalette';
 import SessionDebrief from '@/components/hud/SessionDebrief';
 import { diagnosticLogger } from '@/lib/debug/diagnostic-logger';
 import { playStarkChime } from '@/lib/audio/stark-chime';
+import { findSentenceBoundaries } from '@/lib/voice';
 import { getFirebaseAuth, getGoogleProvider } from '@/lib/firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { processUploadedFile } from '@/lib/document/extractor';
@@ -625,9 +626,6 @@ export default function Home() {
   const lastQueuedSentenceIdxRef = useRef(0);
   const streamingMsgIndexRef = useRef(-1);
 
-  // Sentence boundary detector: splits on .!? followed by space or end-of-string
-  const SENTENCE_BOUNDARY_REGEX = /[.!?](?:\s|$)/g;
-
   useEffect(() => {
     if (messages.length === 0) return;
     const lastIdx = messages.length - 1;
@@ -645,14 +643,9 @@ export default function Home() {
         lastSpokenIndexRef.current = lastIdx; // Mark as being handled
       }
 
-      // Find all sentence boundaries in current content
+      // Find all intelligent sentence boundaries in current content
       const content = lastMsg.content;
-      const boundaries: number[] = [];
-      let match;
-      const regex = new RegExp(SENTENCE_BOUNDARY_REGEX.source, 'g');
-      while ((match = regex.exec(content)) !== null) {
-        boundaries.push(match.index + match[0].length);
-      }
+      const boundaries = findSentenceBoundaries(content);
 
       // Queue any newly completed sentences
       for (let i = lastQueuedSentenceIdxRef.current; i < boundaries.length; i++) {
@@ -675,12 +668,7 @@ export default function Home() {
     if (!isStreaming && streamingMsgIndexRef.current === lastIdx && lastMsg.content) {
       console.log(`[Page:TTS] 🏁 Stream finished for message at index ${lastIdx}. Flushing remaining sentences & tail.`);
       const content = lastMsg.content;
-      const boundaries: number[] = [];
-      let match;
-      const regex = new RegExp(SENTENCE_BOUNDARY_REGEX.source, 'g');
-      while ((match = regex.exec(content)) !== null) {
-        boundaries.push(match.index + match[0].length);
-      }
+      const boundaries = findSentenceBoundaries(content);
 
       // Queue any newly completed sentences that arrived with the final chunk
       for (let i = lastQueuedSentenceIdxRef.current; i < boundaries.length; i++) {
